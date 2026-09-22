@@ -10,7 +10,7 @@ on:
 jobs:
   tara:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     concurrency:
       group: tek-tarama
       cancel-in-progress: false
