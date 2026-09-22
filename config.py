@@ -48,7 +48,7 @@ ATR_TP2_MULT = 3.0     # TP2 = giris + 3.0 x ATR(1h)
 
 # ================== RATE LIMIT ==================
 SCAN_INTERVAL_MIN = 15   # tarama araligi (dakika)
-REQUEST_SLEEP = 0.25     # Bybit istekleri arasi bekleme (saniye) - rate limit icin
+REQUEST_SLEEP = 0.15     # Bybit istekleri arasi bekleme (saniye) - rate limit icin
 
 # ================== DOSYALAR ==================
 LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
