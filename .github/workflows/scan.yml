@@ -1,0 +1,29 @@
+name: kimi-tarama
+
+on:
+  schedule:
+    # Her 20 dakikada bir (saat:03, :23, :43). PRIVATE repo kullanirsan
+    # kota icin "23 * * * *" (saatlik) yap.
+    - cron: "3,23,43 * * *"
+  workflow_dispatch:
+
+jobs:
+  tara:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: tek-tarama
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Kutuphaneleri kur
+        run: python -m pip install -r requirements.txt
+      - name: Tarama yap, sinyel varsa mail at
+        run: python scanner.py --once
+        env:
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
