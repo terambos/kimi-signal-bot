@@ -42,9 +42,9 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT   = 465
 # Lokalde asagidaki tirnak icindeki degerler kullanilir.
 # Bulutta (GitHub) bu degerler "Secrets"tan otomatik okunur - kodda yazmaz.
-MAIL_FROM   = os.environ.get("MAIL_FROM", "terambos44@gmail.com")
-MAIL_TO     = os.environ.get("MAIL_TO", "terambos44@gmail.com")
-GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "qqqjererozxrocee")
+MAIL_FROM   = os.environ.get("MAIL_FROM", "SENIN_GMAIL_ADRESIN@gmail.com")
+MAIL_TO     = os.environ.get("MAIL_TO", "SENIN_GMAIL_ADRESIN@gmail.com")
+GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "BURAYA_16_HANELI_UYGULAMA_SIFRESI")
 
 MAIL_ON_STRONG = True   # GUCLU sinyal cikinca aninda mail at
 HOURLY_DIGEST  = True   # Her saat basi ozet mail at
@@ -62,8 +62,8 @@ LARGE_CAPS = ["BTC", "ETH", "BNB"]
 LARGE_CAP_SCORE_BONUS = 10   # bu coinlerde SCORE_STRONG + 10 gerekir
 
 # ================== BACKTEST AYARLARI ==================
-BACKTEST_BARS = 2000         # 15dk x 2000 = ~21 gunluk veri
-BACKTEST_HORIZON_BARS = 96   # sinyel sonrasi 96 bar = 24 saat pencere
+BACKTEST_BARS = 2000         # 15dk x 2000 = ~21 gunluk veri (Bybit'ten sayfali cekilir)
+BACKTEST_HORIZON_BARS = 96   # sinyel sonrasi 96 bar = 24 saat pencere (senin 1-3 gunluk uslubun icin)
 
 # ================== MANIPULASYON / HABER SPIKE FILTRESI ==================
 # Son N barda tek mum hareketi ATR'nin X kati ustuysa = ani haber/manipulasyon
@@ -71,12 +71,13 @@ BACKTEST_HORIZON_BARS = 96   # sinyel sonrasi 96 bar = 24 saat pencere
 ANOMALY_LOOKBACK = 3     # kac bar geriye bakilsin
 ANOMALY_ATR_MULT = 2.5   # mum boyu > 2.5 x ATR(15dk) => spike say
 # Funding asiriysa kalabalik pozisyon riski: sinyeli engelle
-FUNDING_BLOCK = 0.00075  # |funding| > %0.075 => blokla
+FUNDING_BLOCK = 0.00075  # |funding| > %%0.075 => blokla
 # QQE donus penceresi: kesisme son 6 barda ise gecerli (daha fazla sinyal)
 QQE_FRESH_BARS = 6
+
 # ================== RATE LIMIT ==================
 SCAN_INTERVAL_MIN = 15   # tarama araligi (dakika)
-REQUEST_SLEEP = 0.25     # Bybit istekleri arasi bekleme (saniye) - rate limit icin
+REQUEST_SLEEP = 0.15     # Bybit istekleri arasi bekleme (saniye) - rate limit icin
 
 # ================== DOSYALAR ==================
 LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")

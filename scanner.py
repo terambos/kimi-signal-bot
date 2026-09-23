@@ -15,20 +15,28 @@ import signals as sg
 import notify
 import news
 from config import (SYMBOLS, SCAN_INTERVAL_MIN, SCORE_STRONG, SCORE_WATCH,
-                    HOURLY_DIGEST, NEWS_ENABLED)
+                    HOURLY_DIGEST, NEWS_ENABLED, BACKTEST_BARS,
+                    BACKTEST_HORIZON_BARS)
 
 _last_digest_hour = None
 
 
 def run_scan(verbose=True, explain=False) -> list:
     strong, watch, skipped = [], [], []
+    try:
+        tickers = md.get_all_tickers()
+    except Exception as e:
+        print("[TICKER HATASI]", e)
+        tickers = None
     for sym in SYMBOLS:
         try:
-            data = md.fetch_all(sym)
+            data = md.fetch_all(sym, ticker_info=tickers)
         except Exception as e:
             print("[VERI HATASI]", sym, e)
             continue
         sig = sg.analyze_symbol(data)
+        if sig and not sg.sig_passes(sig):
+            sig = None
         if not sig:
             if explain:
                 d = sg.diagnose(data)
@@ -82,12 +90,12 @@ def loop():
 
 def backtest(symbols):
     for sym in symbols:
-        print("Backtest:", sym, "...")
-        df15 = md.get_klines(sym, "15", 1000)
+        print("[v3] Backtest:", sym, "...")
+        df15 = md.get_klines(sym, "15", BACKTEST_BARS)
         time.sleep(0.3)
-        df60 = md.get_klines(sym, "60", 1000)
+        df60 = md.get_klines(sym, "60", BACKTEST_BARS)
         time.sleep(0.3)
-        df240 = md.get_klines(sym, "240", 800)
+        df240 = md.get_klines(sym, "240", BACKTEST_BARS)
         time.sleep(0.3)
         if df15.empty or df60.empty or df240.empty:
             print("  veri yok, atlaniyor")
@@ -98,19 +106,24 @@ def backtest(symbols):
             continue
         tp1 = res["tp1"].mean() * 100
         tp2 = res["tp2"].mean() * 100
-        print("  sinyal sayisi : %d (son ~500 saat 15dk verisi)" % len(res))
+        print("  sinyal sayisi : %d (son ~%.0f saat 15dk verisi)" % (len(res), len(df15) * 0.25))
         print("  TP1 isabet    : %.0f%%" % tp1)
         print("  TP2 isabet    : %.0f%%" % tp2)
-        print("  Ort. MFE/MAE  : %+.2f%% / %+.2f%% (16 bar = 4 saat pencere)" % (
-            res["mfe_pct"].mean(), res["mae_pct"].mean()))
+        print("  Ort. MFE/MAE  : %+.2f%% / %+.2f%% (%d bar = %.0f saat pencere)" % (
+            res["mfe_pct"].mean(), res["mae_pct"].mean(),
+            BACKTEST_HORIZON_BARS, BACKTEST_HORIZON_BARS * 0.25))
         res.to_csv(f"backtest_{sym}.csv", index=False)
         print("  detay: backtest_%s.csv" % sym)
 
 
+BOT_SURUM = "v3.2"
+
+
 if __name__ == "__main__":
+    print("kripto-sinyal-botu", BOT_SURUM)
     args = sys.argv[1:]
     if args and args[0] == "--backtest":
-        backtest(args[1:] or SYMBOLS[:6])
+        backtest(args[1:] or SYMBOLS)   # arguman yoksa TUM coinler
     elif args and args[0] == "--once":
         run_scan(explain="--explain" in args)
     else:
