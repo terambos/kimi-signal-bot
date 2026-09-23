@@ -2,15 +2,14 @@ name: kimi-tarama
 
 on:
   schedule:
-    # Her 20 dakikada bir (saat:03, :23, :43). PRIVATE repo kullanirsan
-    # kota icin "23 * * * *" (saatlik) yap.
-    - cron: "3,23,43 * * * *"
+    # 30 dakikada bir (saat:09 ve :39, UTC). TR saatiyle ~12 dk farkla.
+    - cron: "9,39 * * * *"
   workflow_dispatch:
 
 jobs:
   tara:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     concurrency:
       group: tek-tarama
       cancel-in-progress: true
