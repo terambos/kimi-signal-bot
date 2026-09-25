@@ -1,10 +1,7 @@
 name: kimi-tarama
 
 on:
-  schedule:
-    # 30 dakikada bir (saat:09 ve :39, UTC). TR saatiyle ~12 dk farkla.
-    - cron: "9,39 * * * *"
-  workflow_dispatch:
+  workflow_dispatch:   # Tetikleme cron-job.org'dan gelir (GitHub cron'u kapali)
 
 jobs:
   tara:
