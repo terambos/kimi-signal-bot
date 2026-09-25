@@ -3,20 +3,31 @@
 Bybit PUBLIC veri katmani - API key GEREKMEZ.
 Kline + Funding + Open Interest ucretsiz public endpoint'lerden alinir.
 """
+import threading
 import time
 import requests
 import pandas as pd
 
 from config import BYBIT_BASE, REQUEST_SLEEP
 
-SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": "kripto-sinyal-botu/1.0"})
+# Her thread kendi oturumunu kullanir (paralel tarama icin thread-safe)
+_local = threading.local()
+
+
+def _session() -> requests.Session:
+    s = getattr(_local, "s", None)
+    if s is None:
+        s = requests.Session()
+        s.headers.update({"User-Agent": "kripto-sinyal-botu/1.0"})
+        _local.s = s
+    return s
 
 
 def _get(path: str, params: dict) -> dict:
+    ses = _session()
     for attempt in range(3):
         try:
-            r = SESSION.get(BYBIT_BASE + path, params=params, timeout=15)
+            r = ses.get(BYBIT_BASE + path, params=params, timeout=15)
             js = r.json()
             if js.get("retCode") == 0:
                 return js
@@ -114,6 +125,32 @@ def get_oi_history(symbol: str) -> pd.DataFrame:
 
 def sleep_between():
     time.sleep(REQUEST_SLEEP)
+
+
+def fetch_all_parallel(symbols, tfs=("15", "60", "240"), max_workers: int = 4) -> dict:
+    """Butun coinleri paralel tarar. 4 is parcacigi ile ag gecikmesini
+    ortusturur - tarama suresi ~4-5 kat kisalir."""
+    from concurrent.futures import ThreadPoolExecutor
+    try:
+        tickers = get_all_tickers()
+    except Exception as e:
+        print("[TICKER HATASI]", e)
+        tickers = None
+
+    def _one(sym):
+        try:
+            return sym, fetch_all(sym, tfs=tfs, ticker_info=tickers)
+        except Exception as e:
+            return sym, {"df_15": None, "error": str(e)}
+
+    results = {}
+    done = 0
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        for sym, data in ex.map(_one, symbols):
+            results[sym] = data
+            done += 1
+            print("  [%d/%d] %s OK" % (done, len(symbols), sym), flush=True)
+    return results
 
 
 def fetch_all(symbol: str, tfs: tuple = ("15", "60", "240"), ticker_info: dict | None = None) -> dict:

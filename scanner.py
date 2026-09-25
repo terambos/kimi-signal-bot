@@ -23,16 +23,12 @@ _last_digest_hour = None
 
 def run_scan(verbose=True, explain=False) -> list:
     strong, watch, skipped = [], [], []
-    try:
-        tickers = md.get_all_tickers()
-    except Exception as e:
-        print("[TICKER HATASI]", e)
-        tickers = None
+    print("Veriler paralel cekiliyor (4 kanal)...", flush=True)
+    results = md.fetch_all_parallel(SYMBOLS)
     for sym in SYMBOLS:
-        try:
-            data = md.fetch_all(sym, ticker_info=tickers)
-        except Exception as e:
-            print("[VERI HATASI]", sym, e)
+        data = results.get(sym, {})
+        if data.get("df_15") is None:
+            print("[VERI HATASI]", sym, data.get("error", "bilinmiyor"))
             continue
         sig = sg.analyze_symbol(data)
         if sig and not sg.sig_passes(sig):
@@ -116,7 +112,7 @@ def backtest(symbols):
         print("  detay: backtest_%s.csv" % sym)
 
 
-BOT_SURUM = "v3.2"
+BOT_SURUM = "v3.3"
 
 
 if __name__ == "__main__":
