@@ -13,7 +13,6 @@ from config import BYBIT_BASE, REQUEST_SLEEP
 # Her thread kendi oturumunu kullanir (paralel tarama icin thread-safe)
 _local = threading.local()
 
-
 def _session() -> requests.Session:
     s = getattr(_local, "s", None)
     if s is None:
@@ -22,47 +21,57 @@ def _session() -> requests.Session:
         _local.s = s
     return s
 
-
-def _get(path: str, params: dict) -> dict:
+def _get(path: str, params: dict, max_retry: int = 5) -> dict:
+    """Bybit istegi. Rate-limit yerse 5 kez dener (5s,10s,15s,20s,25s)."""
     ses = _session()
-    for attempt in range(3):
+    for attempt in range(max_retry):
         try:
-            r = ses.get(BYBIT_BASE + path, params=params, timeout=15)
+            r = ses.get(BYBIT_BASE + path, params=params, timeout=20)
             js = r.json()
             if js.get("retCode") == 0:
                 return js
             rc = js.get("retCode")
-            if rc in (10006, 10018):   # rate limit - daha uzun bekle
-                time.sleep(4.0 * (attempt + 1))
+            if rc in (10006, 10018):   # rate limit
+                wait = 5.0 * (attempt + 1)
+                print("[RATE-LIMIT] %s rc=%s, %.0fs bekleniyor..." % (path, rc, wait), flush=True)
+                time.sleep(wait)
             else:
-                time.sleep(1.0 * (attempt + 1))
-        except Exception:
-            time.sleep(1.5 * (attempt + 1))
+                time.sleep(2.0 * (attempt + 1))
+        except Exception as e:
+            print("[HATA] %s: %s" % (path, e), flush=True)
+            time.sleep(2.0 * (attempt + 1))
+    print("[BASARISIZ] %s - %d deneme sonrasi bos" % (path, max_retry), flush=True)
     return {"retCode": -1, "result": {}}
 
-
 def get_klines(symbol: str, interval: str, limit: int = 300) -> pd.DataFrame:
-    """Bybit kline; limit > 1000 ise geriye dogru sayfalayarak ceker."""
+    """Bybit kline. Bos donerse 3 kez tekrar dener (rate-limit savunmasi)."""
     rows = []
-    end = None
-    remaining = limit
-    while remaining > 0:
-        params = {"category": "linear", "symbol": symbol,
-                  "interval": interval, "limit": min(remaining, 1000)}
-        if end is not None:
-            params["end"] = end
-        js = _get("/v5/market/kline", params)
-        lst = js.get("result", {}).get("list", [])
-        if not lst:
+    for retry in range(3):
+        rows = []
+        end = None
+        remaining = limit
+        while remaining > 0:
+            params = {"category": "linear", "symbol": symbol,
+                      "interval": interval, "limit": min(remaining, 1000)}
+            if end is not None:
+                params["end"] = end
+            js = _get("/v5/market/kline", params)
+            lst = js.get("result", {}).get("list", [])
+            if not lst:
+                break
+            rows.extend(lst)
+            remaining -= len(lst)
+            oldest = int(lst[-1][0])
+            end = oldest - 1
+            if len(lst) < min(remaining + len(lst), 1000):
+                break
+            time.sleep(REQUEST_SLEEP)
+        if rows:
             break
-        rows.extend(lst)
-        remaining -= len(lst)
-        oldest = int(lst[-1][0])      # liste yeniden eskiye sirali, son eleman en eski
-        end = oldest - 1
-        if len(lst) < min(remaining + len(lst), 1000):
-            break
-        time.sleep(REQUEST_SLEEP)
+        print("[KLINE RETRY] %s %s bos, tekrar (%d/3)" % (symbol, interval, retry + 1), flush=True)
+        time.sleep(5.0 * (retry + 1))
     if not rows:
+        print("[KLINE BASARISIZ] %s %s" % (symbol, interval), flush=True)
         return pd.DataFrame()
     df = pd.DataFrame(rows, columns=["start", "open", "high", "low", "close",
                                      "volume", "turnover"]).drop_duplicates(subset="start")
@@ -71,7 +80,6 @@ def get_klines(symbol: str, interval: str, limit: int = 300) -> pd.DataFrame:
         df[c] = df[c].astype(float)
     df = df.sort_values("start").set_index("start")
     return df
-
 
 def get_ticker(symbol: str) -> dict:
     js = _get("/v5/market/tickers", {
@@ -88,10 +96,8 @@ def get_ticker(symbol: str) -> dict:
         "turnover24h": float(t.get("turnover24h", 0) or 0),
     }
 
-
 def get_all_tickers() -> dict:
-    """Tum linear coinlerin funding/mark/turnover verisini TEK istekle ceker.
-    GitHub runner IP'leri paylasimli oldugundan rate-limit riskini azaltir."""
+    """Tum linear coinlerin funding/mark/turnover verisini TEK istekle ceker."""
     js = _get("/v5/market/tickers", {"category": "linear"})
     out = {}
     for t in js.get("result", {}).get("list", []):
@@ -105,7 +111,6 @@ def get_all_tickers() -> dict:
         except (TypeError, ValueError):
             continue
     return out
-
 
 def get_oi_history(symbol: str) -> pd.DataFrame:
     """Saatlik acik pozisyon gecmisi (son ~1-2 gun)"""
@@ -122,19 +127,16 @@ def get_oi_history(symbol: str) -> pd.DataFrame:
     df = df.sort_values("timestamp").set_index("timestamp")
     return df
 
-
 def sleep_between():
     time.sleep(REQUEST_SLEEP)
 
-
-def fetch_all_parallel(symbols, tfs=("15", "60", "240"), max_workers: int = 4) -> dict:
-    """Butun coinleri paralel tarar. 4 is parcacigi ile ag gecikmesini
-    ortusturur - tarama suresi ~4-5 kat kisalir."""
+def fetch_all_parallel(symbols, tfs=("15", "60", "240"), max_workers: int = 2) -> dict:
+    """Butun coinleri paralel tarar. 2 worker - rate-limit riskini azaltir."""
     from concurrent.futures import ThreadPoolExecutor
     try:
         tickers = get_all_tickers()
     except Exception as e:
-        print("[TICKER HATASI]", e)
+        print("[TICKER HATASI]", e, flush=True)
         tickers = None
 
     def _one(sym):
@@ -152,10 +154,8 @@ def fetch_all_parallel(symbols, tfs=("15", "60", "240"), max_workers: int = 4) -
             print("  [%d/%d] %s OK" % (done, len(symbols), sym), flush=True)
     return results
 
-
 def fetch_all(symbol: str, tfs: tuple = ("15", "60", "240"), ticker_info: dict | None = None) -> dict:
-    """Bir coin icin butun zaman dilimlerini + funding/OI cek.
-    ticker_info verilirse (get_all_tickers ciktisi) tek tek ticker istegi atmaz."""
+    """Bir coin icin butun zaman dilimlerini + funding/OI cek."""
     out = {"symbol": symbol}
     for tf in tfs:
         out[f"df_{tf}"] = get_klines(symbol, tf)
