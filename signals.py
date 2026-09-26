@@ -13,11 +13,25 @@ import numpy as np
 import pandas as pd
 
 import indicators as ind
-from config import TP1_MIN_PCT, TP2_MIN_PCT, ATR_TP1_MULT, ATR_TP2_MULT
+from config import (TP1_MIN_PCT, TP2_MIN_PCT, ATR_TP1_MULT, ATR_TP2_MULT,
+                    ANOMALY_LOOKBACK, ANOMALY_ATR_MULT, FUNDING_BLOCK,
+                    QQE_FRESH_BARS, SCORE_STRONG, LARGE_CAPS,
+                    LARGE_CAP_SCORE_BONUS)
 
 
 def _pct(a, b):
     return (a - b) / b if b else 0.0
+
+
+def sig_passes(sig: dict) -> bool:
+    """Sinyal esik kontrolu: buyuk coinlerde ek skor sarti arar."""
+    if not sig:
+        return False
+    esik = SCORE_STRONG
+    coin = sig["symbol"].replace("USDT", "")
+    if coin in LARGE_CAPS:
+        esik += LARGE_CAP_SCORE_BONUS
+    return sig["score"] >= esik
 
 
 def analyze_symbol(data: dict) -> dict | None:
@@ -33,6 +47,11 @@ def analyze_symbol(data: dict) -> dict | None:
     atr15 = ind.atr(df15).iloc[-1]
     atr60 = ind.atr(df60, 14).iloc[-1]
     if atr60 <= 0 or last <= 0:
+        return None
+
+    # ---- MANIPULASYON / HABER SPIKE FILTRESI ----
+    bar_range = (df15["high"] - df15["low"]).iloc[-ANOMALY_LOOKBACK:]
+    if len(bar_range) and (bar_range.max() > ANOMALY_ATR_MULT * atr15):
         return None
 
     # ---- HTF trend (Kalman) ----
@@ -52,8 +71,10 @@ def analyze_symbol(data: dict) -> dict | None:
 
     # ---- QQE (momentum donusu) ----
     q15 = ind.qqe(df15["close"])
-    fresh_up = bool(q15["qqe_fresh_up"].iloc[-1]) and bool(q15["qqe_bull_zone"].iloc[-1])
-    fresh_dn = bool(q15["qqe_fresh_dn"].iloc[-1]) and (not bool(q15["qqe_bull_zone"].iloc[-1]))
+    fup = q15["qqe_cross_up"].rolling(QQE_FRESH_BARS, min_periods=1).max().astype(bool)
+    fdn = q15["qqe_cross_dn"].rolling(QQE_FRESH_BARS, min_periods=1).max().astype(bool)
+    fresh_up = bool(fup.iloc[-1]) and bool(q15["qqe_bull_zone"].iloc[-1])
+    fresh_dn = bool(fdn.iloc[-1]) and (not bool(q15["qqe_bull_zone"].iloc[-1]))
 
     # ---- Hacim ----
     v15 = ind.volume_signals(df15)
@@ -63,7 +84,7 @@ def analyze_symbol(data: dict) -> dict | None:
 
     # ---- Funding (ters uyar) ----
     funding = float(data.get("funding", 0) or 0)
-    funding_ok_long = funding < 0.0005     # %0.05 ustu finansman = kalabalik long
+    funding_ok_long = funding < 0.0005
     funding_ok_short = funding > -0.0005
 
     # ---- Open Interest (1s degisim) ----
@@ -87,7 +108,6 @@ def analyze_symbol(data: dict) -> dict | None:
     near_support = (nearest_sup is not None and sr_dist_sup < 0.0035) or abs(last - pd_low) / last < 0.003
     near_resist = (nearest_res is not None and sr_dist_res < 0.0035) or abs(last - pd_high) / last < 0.003
 
-    # 15dk Kalman yonu (kisa vadeli ivme)
     bull_15 = bool(k15["kalman_above"].iloc[-1])
     bear_15 = not bull_15
 
@@ -95,13 +115,18 @@ def analyze_symbol(data: dict) -> dict | None:
     def build(direction):
         score, reasons = 0, []
 
+        if direction == "LONG" and funding > FUNDING_BLOCK:
+            return None
+        if direction == "SHORT" and funding < -FUNDING_BLOCK:
+            return None
+
         # 1) HTF trend hizalanmasi (25)
         if direction == "LONG" and bull_htf and trend_ok and di_bull:
             score += 25; reasons.append("1s+4s Kalman trend yukari, ADX %.0f +DI baskin" % adx_v)
         elif direction == "SHORT" and bear_htf and trend_ok and di_bear:
             score += 25; reasons.append("1s+4s Kalman trend asagi, ADX %.0f -DI baskin" % adx_v)
         else:
-            return None  # anahtar kosul: trend yoksa sinyal yok
+            return None
 
         # 2) QQE momentum donusu (20)
         if direction == "LONG" and fresh_up:
@@ -115,7 +140,7 @@ def analyze_symbol(data: dict) -> dict | None:
         if (direction == "LONG" and obv_up) or (direction == "SHORT" and not obv_up):
             score += 5; reasons.append("OBV egrisi yonle uyumlu")
 
-        # 4) Open Interest (10) - akilli para vekili
+        # 4) Open Interest (10)
         if direction == "LONG" and oi_chg > 0.005:
             score += 10; reasons.append("Acik pozisyon 1s icinde +%.1f%% (para giriyor)" % (oi_chg * 100))
         elif direction == "SHORT" and oi_chg > 0.005:
@@ -137,7 +162,7 @@ def analyze_symbol(data: dict) -> dict | None:
             ref = nearest_res if nearest_res and sr_dist_res < abs(last - pd_high) / last else pd_high
             reasons.append("Fiyat guclu direnc bolgesine yakin (%.8g)" % ref)
 
-        # 7) 15dk ivme (5) + haftalik acilis ustunde/altinda (5)
+        # 7) 15dk ivme (5) + haftalik acilis (5)
         if (direction == "LONG" and bull_15) or (direction == "SHORT" and bear_15):
             score += 5; reasons.append("15dk Kalman ivme yonle uyumlu")
         if direction == "LONG" and last > week_open:
@@ -151,7 +176,7 @@ def analyze_symbol(data: dict) -> dict | None:
         else:
             base = nearest_res if near_resist else (pd_high if abs(last - pd_high) / last < 0.01 else last)
 
-        entry = float(last)  # piyasa girisi referansi
+        entry = float(last)
         if direction == "LONG":
             tp1 = max(entry * (1 + TP1_MIN_PCT), entry + ATR_TP1_MULT * atr60)
             tp2 = max(entry * (1 + TP2_MIN_PCT), entry + ATR_TP2_MULT * atr60)
@@ -163,7 +188,6 @@ def analyze_symbol(data: dict) -> dict | None:
             if nearest_sup and tp1 < nearest_sup * 1.001:
                 reasons.append("Not: TP1 yolu uzerinde destek (%.8g) - kismi kar almayi dusun" % nearest_sup)
 
-        # anahtar referans bolge (limit emir bölgesi önerisi)
         zone = float(base) if base else entry
 
         return {
@@ -189,7 +213,6 @@ def backtest_symbol(symbol: str, df15: pd.DataFrame, df60: pd.DataFrame,
     """
     Basit dogrulama: sinyal uretilen her bar icin sonraki 'horizon_bars' (15dk) icinde
     TP1/TP2 dokunuldu mu, en kotu geri cekilme ne oldu.
-    Not: Gecmis funding/OI olmadigi icin bu parcalar skora dahil DEGIL.
     """
     rows = []
     start = max(120, len(df15) - 2000)
@@ -221,8 +244,7 @@ def backtest_symbol(symbol: str, df15: pd.DataFrame, df60: pd.DataFrame,
 
 
 def diagnose(data: dict) -> dict:
-    """Bir coinin neden sinyal uretmedigini gosteren hizli kontrol.
-    (analyze_symbol'den bagimsiz, sadece raporlama icin.)"""
+    """Bir coinin neden sinyal uretmedigini gosteren hizli kontrol."""
     df60 = data.get("df_60"); df240 = data.get("df_240"); df15 = data.get("df_15")
     if df60 is None or df240 is None or len(df60) < 60 or len(df240) < 40:
         return {"ok": False, "neden": "yetersiz veri"}
@@ -241,8 +263,10 @@ def diagnose(data: dict) -> dict:
     if adx_v < 20:
         reasons.append("ADX dusuk (%.0f < 20), trend siddeti yetersiz" % adx_v)
     if q15 is not None:
-        fresh_up = bool(q15["qqe_fresh_up"].iloc[-1])
-        fresh_dn = bool(q15["qqe_fresh_dn"].iloc[-1])
+        fup = q15["qqe_cross_up"].rolling(QQE_FRESH_BARS, min_periods=1).max().astype(bool)
+        fdn = q15["qqe_cross_dn"].rolling(QQE_FRESH_BARS, min_periods=1).max().astype(bool)
+        fresh_up = bool(fup.iloc[-1])
+        fresh_dn = bool(fdn.iloc[-1])
         if not (fresh_up or fresh_dn):
-            reasons.append("QQE momentum donusu yok (son 3 barda kesisme yok)")
+            reasons.append("QQE momentum donusu yok (son %d barda kesisme yok)" % QQE_FRESH_BARS)
     return {"ok": not reasons, "neden": "; ".join(reasons) if reasons else "kosullar uygun"}
