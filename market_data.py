@@ -1,12 +1,17 @@
 # -*- coding: utf-8 -*-
 """
 Bybit PUBLIC veri katmani - API key GEREKMEZ.
-Kline + Funding + Open Interest ucretsiz public endpoint'lerden alinir.
+Proxy uzerinden calisir (GitHub Actions IP engeli icin).
 """
 import threading
 import time
+import warnings
 import requests
 import pandas as pd
+import urllib3
+
+# Proxy MITM sertifikasi icin uyari bastir
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from config import BYBIT_BASE, REQUEST_SLEEP
 
@@ -18,6 +23,7 @@ def _session() -> requests.Session:
     if s is None:
         s = requests.Session()
         s.headers.update({"User-Agent": "kripto-sinyal-botu/1.0"})
+        s.verify = False   # proxy MITM sertifikasi - dogrulama kapali
         _local.s = s
     return s
 
@@ -97,7 +103,8 @@ def get_ticker(symbol: str) -> dict:
     }
 
 def get_all_tickers() -> dict:
-    """Tum linear coinlerin funding/mark/turnover verisini TEK istekle ceker."""
+    """Tum linear coinlerin funding/mark/turnover verisini TEK istekle ceker.
+    NOT: Proxy/rate-limit icin kullanilmiyor."""
     js = _get("/v5/market/tickers", {"category": "linear"})
     out = {}
     for t in js.get("result", {}).get("list", []):
@@ -131,17 +138,13 @@ def sleep_between():
     time.sleep(REQUEST_SLEEP)
 
 def fetch_all_parallel(symbols, tfs=("15", "60", "240"), max_workers: int = 2) -> dict:
-    """Butun coinleri paralel tarar. 2 worker - rate-limit riskini azaltir."""
+    """Butun coinleri paralel tarar. get_all_tickers YOK - her coin kendi
+    ticker'ini ayri ceker (proxy icin daha hafif)."""
     from concurrent.futures import ThreadPoolExecutor
-    try:
-        tickers = get_all_tickers()
-    except Exception as e:
-        print("[TICKER HATASI]", e, flush=True)
-        tickers = None
 
     def _one(sym):
         try:
-            return sym, fetch_all(sym, tfs=tfs, ticker_info=tickers)
+            return sym, fetch_all(sym, tfs=tfs, ticker_info=None)
         except Exception as e:
             return sym, {"df_15": None, "error": str(e)}
 
