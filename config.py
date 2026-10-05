@@ -56,7 +56,7 @@ QQE_FRESH_BARS = 6
 
 # ================== RATE LIMIT ==================
 SCAN_INTERVAL_MIN = 15
-REQUEST_SLEEP = 0.15
+REQUEST_SLEEP = 0.25
 
 # ================== DOSYALAR ==================
 LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
