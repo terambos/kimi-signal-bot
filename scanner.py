@@ -23,12 +23,12 @@ _last_digest_hour = None
 
 def run_scan(verbose=True, explain=False) -> list:
     strong, watch, skipped = [], [], []
-    print("Veriler paralel cekiliyor (4 kanal)...", flush=True)
-    results = md.fetch_all_parallel(SYMBOLS)
+    print("Veriler sirayla cekiliyor...", flush=True)
     for sym in SYMBOLS:
-        data = results.get(sym, {})
-        if data.get("df_15") is None:
-            print("[VERI HATASI]", sym, data.get("error", "bilinmiyor"))
+        try:
+            data = md.fetch_all(sym)
+        except Exception as e:
+            print("[VERI HATASI]", sym, e)
             continue
         sig = sg.analyze_symbol(data)
         if sig and not sg.sig_passes(sig):
@@ -112,14 +112,14 @@ def backtest(symbols):
         print("  detay: backtest_%s.csv" % sym)
 
 
-BOT_SURUM = "v3.3"
+BOT_SURUM = "v3.4"
 
 
 if __name__ == "__main__":
     print("kripto-sinyal-botu", BOT_SURUM)
     args = sys.argv[1:]
     if args and args[0] == "--backtest":
-        backtest(args[1:] or SYMBOLS)   # arguman yoksa TUM coinler
+        backtest(args[1:] or SYMBOLS)
     elif args and args[0] == "--once":
         run_scan(explain="--explain" in args)
     else:
