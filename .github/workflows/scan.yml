@@ -23,5 +23,3 @@ jobs:
           MAIL_FROM: ${{ secrets.MAIL_FROM }}
           MAIL_TO: ${{ secrets.MAIL_TO }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          http_proxy: "http://47.91.65.23:3128"
-          https_proxy: "http://47.91.65.23:3128"
