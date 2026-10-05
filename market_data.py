@@ -137,7 +137,7 @@ def get_oi_history(symbol: str) -> pd.DataFrame:
 def sleep_between():
     time.sleep(REQUEST_SLEEP)
 
-def fetch_all_parallel(symbols, tfs=("15", "60", "240"), max_workers: int = 2) -> dict:
+def fetch_all_parallel(symbols, tfs=("15", "60", "240"), max_workers: int = 1) -> dict:
     """Butun coinleri paralel tarar. get_all_tickers YOK - her coin kendi
     ticker'ini ayri ceker (proxy icin daha hafif)."""
     from concurrent.futures import ThreadPoolExecutor
