@@ -32,7 +32,7 @@ def _get(path: str, params: dict, max_retry: int = 5) -> dict:
     ses = _session()
     for attempt in range(max_retry):
         try:
-            r = ses.get(BYBIT_BASE + path, params=params, timeout=20)
+            r = ses.get(BYBIT_BASE + path, params=params, timeout=30)
             js = r.json()
             if js.get("retCode") == 0:
                 return js
