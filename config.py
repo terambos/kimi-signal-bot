@@ -23,7 +23,7 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT   = 465
 MAIL_FROM   = os.environ.get("MAIL_FROM", "terambos44@gmail.com")
 MAIL_TO     = os.environ.get("MAIL_TO", "terambos44@gmail.com")
-GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "qqqjererozxrocee")
+GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "lgdvpdkqjeekwgzp")
 
 MAIL_ON_STRONG = True
 HOURLY_DIGEST  = True
