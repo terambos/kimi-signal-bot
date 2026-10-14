@@ -93,21 +93,6 @@ def get_all_tickers() -> dict:
     return out
 
 
-def get_oi_history(symbol: str) -> pd.DataFrame:
-    js = _get("/v5/market/open-interest", {
-        "category": "linear", "symbol": symbol,
-        "intervalTime": "1h", "limit": 24,
-    })
-    lst = js.get("result", {}).get("list", [])
-    if not lst:
-        return pd.DataFrame()
-    df = pd.DataFrame(lst)
-    df["timestamp"] = pd.to_datetime(df["timestamp"].astype("int64"), unit="ms", utc=True)
-    df["openInterest"] = df["openInterest"].astype(float)
-    df = df.sort_values("timestamp").set_index("timestamp")
-    return df
-
-
 def sleep_between():
     time.sleep(REQUEST_SLEEP)
 
@@ -122,7 +107,5 @@ def fetch_all(symbol: str, tfs: tuple = ("15", "60", "240"), ticker_info: dict |
     else:
         out.update(get_ticker(symbol))
     sleep_between()
-    oi = get_oi_history(symbol)
-    out["oi_df"] = oi
-    sleep_between()
+    out["oi_df"] = None
     return out
