@@ -16,7 +16,7 @@ SESSION.headers.update({"User-Agent": "kripto-sinyal-botu/1.0"})
 def _get(path: str, params: dict) -> dict:
     for attempt in range(3):
         try:
-            r = SESSION.get(BYBIT_BASE + path, params=params, timeout=30)
+            r = SESSION.get(BYBIT_BASE + path, params=params, timeout=(10, 20))
             js = r.json()
             if js.get("retCode") == 0:
                 return js
