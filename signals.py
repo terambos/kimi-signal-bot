@@ -8,6 +8,7 @@ Sinyal motoru (kalite odakli):
 - Funding asiriysa ters uyar
 - Fiyat guclu S/R bolgesine yakin olmali (tolerans 0.25%)
 - BTC korelasyon filtresi: BTC trendi tersse altcoin sinyali iptal
+- Stop: fiyatta %5, TP1: %5, TP2: %10
 Cikti: yon, giris bolgesi, TP1/TP2, stop, guven skoru (0-100), gerekceler.
 """
 import numpy as np
@@ -17,7 +18,7 @@ import indicators as ind
 from config import (TP1_MIN_PCT, TP2_MIN_PCT, ATR_TP1_MULT, ATR_TP2_MULT,
                     ANOMALY_LOOKBACK, ANOMALY_ATR_MULT, FUNDING_BLOCK,
                     QQE_FRESH_BARS, SCORE_STRONG, LARGE_CAPS,
-                    LARGE_CAP_SCORE_BONUS, STOP_ATR_MULT)
+                    LARGE_CAP_SCORE_BONUS, STOP_PCT)
 
 
 def _pct(a, b):
@@ -191,7 +192,7 @@ def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
             base = nearest_res if near_resist else (pd_high if abs(last - pd_high) / last < 0.01 else last)
 
         entry = float(last)
-        stop_dist = STOP_ATR_MULT * atr60
+        stop_dist = STOP_PCT * entry
 
         if direction == "LONG":
             stop = entry - stop_dist
@@ -228,10 +229,14 @@ def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
 
 
 def backtest_symbol(symbol: str, df15: pd.DataFrame, df60: pd.DataFrame,
-                    df240: pd.DataFrame, horizon_bars: int = 96,
+                    df240: pd.DataFrame, horizon_bars: int = 192,
                     btc15: pd.DataFrame | None = None) -> pd.DataFrame:
     """
-    Gercekci backtest: stop-loss'lu, BTC korelasyon filtreli.
+    Gercekci backtest:
+    - Stop: fiyatta %5
+    - TP1: fiyatta %5, TP2: fiyatta %10
+    - BTC korelasyon filtresi (btc15 verilirse)
+    - 48 saat sonra hala acik olan islemler 'TIMEOUT' olarak kapatilir
     """
     rows = []
     start = max(120, len(df15) - 2000)
@@ -260,33 +265,51 @@ def backtest_symbol(symbol: str, df15: pd.DataFrame, df60: pd.DataFrame,
 
         fut_h = df15["high"].iloc[i + 1:i + 1 + horizon_bars].to_numpy()
         fut_l = df15["low"].iloc[i + 1:i + 1 + horizon_bars].to_numpy()
+        fut_c = df15["close"].iloc[i + 1:i + 1 + horizon_bars].to_numpy()
         entry = sig["price"]
         stop = sig["stop"]
 
         tp1_hit = tp2_hit = stop_hit = False
         first_event = None
+        exit_price = None
+
         for j in range(len(fut_h)):
             hi, lo = fut_h[j], fut_l[j]
             if sig["direction"] == "LONG":
                 if lo <= stop:
-                    stop_hit = True; first_event = "STOP"; break
+                    stop_hit = True; first_event = "STOP"; exit_price = stop; break
                 if hi >= sig["tp1"] and not tp1_hit:
                     tp1_hit = True
-                    if first_event is None: first_event = "TP1"
+                    if first_event is None: first_event = "TP1"; exit_price = sig["tp1"]
                 if hi >= sig["tp2"]:
                     tp2_hit = True
                     if first_event is None: first_event = "TP2"
+                    exit_price = sig["tp2"]
                     break
             else:
                 if hi >= stop:
-                    stop_hit = True; first_event = "STOP"; break
+                    stop_hit = True; first_event = "STOP"; exit_price = stop; break
                 if lo <= sig["tp1"] and not tp1_hit:
                     tp1_hit = True
-                    if first_event is None: first_event = "TP1"
+                    if first_event is None: first_event = "TP1"; exit_price = sig["tp1"]
                 if lo <= sig["tp2"]:
                     tp2_hit = True
                     if first_event is None: first_event = "TP2"
+                    exit_price = sig["tp2"]
                     break
+
+        # Timeout: hicbir olay olmadiysa son kapanis
+        if first_event is None and len(fut_c):
+            first_event = "TIMEOUT"
+            exit_price = float(fut_c[-1])
+
+        # Net PnL (fiyat yuzdesi)
+        if exit_price is None:
+            pnl_pct = 0.0
+        elif sig["direction"] == "LONG":
+            pnl_pct = (exit_price - entry) / entry * 100
+        else:
+            pnl_pct = (entry - exit_price) / entry * 100
 
         if sig["direction"] == "LONG":
             mae = ((fut_l.min() - entry) / entry) if len(fut_l) else 0
@@ -299,6 +322,7 @@ def backtest_symbol(symbol: str, df15: pd.DataFrame, df60: pd.DataFrame,
             "time": t_now, "dir": sig["direction"], "score": sig["score"],
             "tp1": tp1_hit, "tp2": tp2_hit, "stop": stop_hit,
             "first": first_event,
+            "pnl_pct": round(pnl_pct, 3),
             "mae_pct": round(mae * 100, 2), "mfe_pct": round(mfe * 100, 2),
         })
     return pd.DataFrame(rows)
