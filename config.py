@@ -32,7 +32,7 @@ TP1_MIN_PCT = 0.008
 TP2_MIN_PCT = 0.02
 ATR_TP1_MULT = 1.2
 ATR_TP2_MULT = 2.5
-
+STOP_ATR_MULT = 0.8      # stop = giris -/+ 0.8 * ATR(1s)
 LARGE_CAPS = ["ETH", "BNB"]
 LARGE_CAP_SCORE_BONUS = 10
 
