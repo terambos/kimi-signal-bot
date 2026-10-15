@@ -33,6 +33,7 @@ TP2_MIN_PCT = 0.02
 ATR_TP1_MULT = 1.2
 ATR_TP2_MULT = 2.5
 STOP_ATR_MULT = 0.8      # stop = giris -/+ 0.8 * ATR(1s)
+
 LARGE_CAPS = ["ETH", "BNB"]
 LARGE_CAP_SCORE_BONUS = 10
 
@@ -42,17 +43,16 @@ BACKTEST_HORIZON_BARS = 96
 ANOMALY_LOOKBACK = 3
 ANOMALY_ATR_MULT = 2.5
 FUNDING_BLOCK = 0.00075
-QQE_FRESH_BARS = 4          # 6 -> 4 : kaliteyi korurken sinyal yakalanabilir hale getirir
+QQE_FRESH_BARS = 4
 
 SCAN_INTERVAL_MIN = 15
-REQUEST_SLEEP = 0.15        # paralel cekimde daha az gerekli
-MAX_WORKERS = 8             # paralel sembol cekimi
+REQUEST_SLEEP = 0.15
+MAX_WORKERS = 8
 
 LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 SIGNAL_LOG = os.path.join(LOG_DIR, "sinyal_log.csv")
 TRADE_LOG  = os.path.join(LOG_DIR, "trade_gunlugu.csv")
 
-# Ayni sinyalin tekrar mail atmasini engelleyen pencere (dakika)
 SIGNAL_COOLDOWN_MIN = 60
 
 NEWS_ENABLED = True
