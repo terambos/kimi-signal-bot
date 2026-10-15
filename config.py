@@ -6,7 +6,7 @@ import os
 
 COINS = ["ETH", "SOL", "XRP", "SUI", "HYPE",
          "AVAX", "ARB", "APT", "TIA", "DOGE",
-         "PEPE", "WIF", "SEI", "INJ", "NEAR",
+         "1000PEPE", "WIF", "SEI", "INJ", "NEAR",
          "BNB", "LINK", "OP", "TAO", "ONDO"]
 SYMBOLS = [c + "USDT" for c in COINS]
 
@@ -28,22 +28,19 @@ GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
 MAIL_ON_STRONG = True
 HOURLY_DIGEST  = True
 
-# --- STOP ve TP (FIYAT yuzdesi olarak; kaldirac hesabi kullaniciya ait) ---
-# 20 USD marjin x 20x = 400 USD efektif pozisyon
-# Fiyatta %5 hareket = marjinin %100'u (20 USD)
-STOP_PCT     = 0.05      # fiyatta %5 stop  -> marjin biter
-TP1_MIN_PCT  = 0.05      # fiyatta %5 TP1   -> +20 USD
-TP2_MIN_PCT  = 0.10      # fiyatta %10 TP2  -> +40 USD
+# --- STOP ve TP (FIYAT yuzdesi olarak) ---
+STOP_PCT     = 0.05      # fiyatta %5 stop
+TP1_MIN_PCT  = 0.05      # fiyatta %5 TP1
+TP2_MIN_PCT  = 0.07      # fiyatta %7 TP2 (eskiden 0.10)
 
-# ATR bazli hedefler pratikte devre disi (min degerler her zaman daha buyuk)
 ATR_TP1_MULT = 0.1
 ATR_TP2_MULT = 0.1
 
 LARGE_CAPS = ["ETH", "BNB"]
 LARGE_CAP_SCORE_BONUS = 10
 
-BACKTEST_BARS = 2000
-BACKTEST_HORIZON_BARS = 192    # 192 * 15dk = 48 saat (2 gun)
+BACKTEST_BARS = 4000
+BACKTEST_HORIZON_BARS = 288    # 288 * 15dk = 72 saat (3 gun)
 
 ANOMALY_LOOKBACK = 3
 ANOMALY_ATR_MULT = 2.5
