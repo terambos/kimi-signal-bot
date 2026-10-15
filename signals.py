@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
 Sinyal motoru (kalite odakli):
-- HTF (1s+4s) Kalman trendi: 4s ana yon, 1s egim teyidi (pullback toleransli)
+- HTF trend: 4s ana yon, 1s egim teyidi (pullback toleransli)
 - QQE momentum donusu ZORUNLU (taze)
-- Hacim spike esigi 2.0x (daha guclu teyit)
-- Open Interest artisi (gercek veri)
+- Hacim spike esigi 2.0x
+- Open Interest artisi (varsa)
 - Funding asiriysa ters uyar
 - Fiyat guclu S/R bolgesine yakin olmali (tolerans 0.25%)
 - BTC korelasyon filtresi: BTC trendi tersse altcoin sinyali iptal
@@ -18,11 +18,24 @@ import indicators as ind
 from config import (TP1_MIN_PCT, TP2_MIN_PCT, ATR_TP1_MULT, ATR_TP2_MULT,
                     ANOMALY_LOOKBACK, ANOMALY_ATR_MULT, FUNDING_BLOCK,
                     QQE_FRESH_BARS, SCORE_STRONG, LARGE_CAPS,
-                    LARGE_CAP_SCORE_BONUS, STOP_PCT)
+                    LARGE_CAP_SCORE_BONUS, STOP_PCT, BACKTEST_BARS)
 
 
 def _pct(a, b):
     return (a - b) / b if b else 0.0
+
+
+def _htf_trend(k60: pd.DataFrame, k240: pd.DataFrame) -> tuple:
+    """
+    Ortak HTF trend mantigi: 4s yon ana belirleyici, 1s egim teyit ediyor.
+    Donen: (bull_htf, bear_htf, k60_slope_pct)
+    """
+    k60_slope_pct = float(k60["kalman_slope_pct"].iloc[-1])
+    bull_240 = bool(k240["kalman_above"].iloc[-1])
+    bear_240 = not bull_240
+    bull_htf = bull_240 and k60_slope_pct > 0
+    bear_htf = bear_240 and k60_slope_pct < 0
+    return bull_htf, bear_htf, k60_slope_pct
 
 
 def sig_passes(sig: dict) -> bool:
@@ -36,10 +49,6 @@ def sig_passes(sig: dict) -> bool:
 
 
 def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
-    """
-    data: df_15, df_60, df_240, symbol, funding, oi_df iceren dict
-    btc_bull: True/False/None. None ise BTC korelasyon filtresi uygulanmaz.
-    """
     df15 = data.get("df_15")
     df60 = data.get("df_60")
     df240 = data.get("df_240")
@@ -54,24 +63,18 @@ def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
     if atr60 <= 0 or last <= 0:
         return None
 
-    # ---- Manipulasyon / haber spike filtresi ----
+    # Manipulasyon / haber spike filtresi
     bar_range = (df15["high"] - df15["low"]).iloc[-ANOMALY_LOOKBACK:]
     if len(bar_range) and (bar_range.max() > ANOMALY_ATR_MULT * atr15):
         return None
 
-    # ---- HTF trend (Kalman) — PULLBACK TOLERANSLI ----
+    # HTF trend
     k60 = ind.kalman_trend(df60["close"])
     k240 = ind.kalman_trend(df240["close"])
     k15 = ind.kalman_trend(df15["close"])
+    bull_htf, bear_htf, k60_slope_pct = _htf_trend(k60, k240)
 
-    k60_slope_pct = float(k60["kalman_slope_pct"].iloc[-1])
-    bull_240 = bool(k240["kalman_above"].iloc[-1])
-    bear_240 = not bull_240
-    # 4s yon ana belirleyici; 1s egim teyit ediyor (pullback kabul)
-    bull_htf = bull_240 and k60_slope_pct > 0
-    bear_htf = bear_240 and k60_slope_pct < 0
-
-    # ---- ADX filtre ----
+    # ADX
     a60 = ind.adx(df60)
     adx_v = float(a60["adx"].iloc[-1])
     plus, minus = float(a60["plus_di"].iloc[-1]), float(a60["minus_di"].iloc[-1])
@@ -79,30 +82,30 @@ def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
     di_bull = plus > minus
     di_bear = minus > plus
 
-    # ---- QQE ----
+    # QQE
     q15 = ind.qqe(df15["close"])
     fresh_up = bool(q15["qqe_fresh_up"].iloc[-1]) and bool(q15["qqe_bull_zone"].iloc[-1])
     fresh_dn = bool(q15["qqe_fresh_dn"].iloc[-1]) and (not bool(q15["qqe_bull_zone"].iloc[-1]))
 
-    # ---- Hacim ----
+    # Hacim
     v15 = ind.volume_signals(df15, spike_mult=2.0)
     spike = bool(v15["vol_spike"].iloc[-1])
     vol_ratio = float(v15["vol_ratio"].iloc[-1])
     obv_up = bool(v15["obv_rising"].iloc[-1])
 
-    # ---- Funding ----
+    # Funding
     funding = float(data.get("funding", 0) or 0)
     funding_ok_long = funding < 0.0005
     funding_ok_short = funding > -0.0005
 
-    # ---- Open Interest ----
+    # Open Interest (varsa)
     oi_chg = 0.0
     oi_df = data.get("oi_df")
     if oi_df is not None and len(oi_df) >= 5:
         oi_chg = _pct(float(oi_df["openInterest"].iloc[-1]),
                       float(oi_df["openInterest"].iloc[-5]))
 
-    # ---- S/R ----
+    # S/R
     sr = ind.strong_sr(df15)
     supports = sr["supports"]
     resists = sr["resists"]
@@ -125,13 +128,12 @@ def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
     def build(direction):
         score, reasons = 0, []
 
-        # On filtre 1: funding
         if direction == "LONG" and funding > FUNDING_BLOCK:
             return None
         if direction == "SHORT" and funding < -FUNDING_BLOCK:
             return None
 
-        # On filtre 2: BTC korelasyon
+        # BTC korelasyon
         if btc_bull is not None and data["symbol"] != "BTCUSDT":
             if direction == "LONG" and not btc_bull:
                 return None
@@ -140,9 +142,9 @@ def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
 
         # 1) HTF trend (25)
         if direction == "LONG" and bull_htf and trend_ok and di_bull:
-            score += 25; reasons.append("4s Kalman trend yukari, 1s egim pozitif, ADX %.1f +DI baskin" % adx_v)
+            score += 25; reasons.append("4s Kalman yukari, 1s egim +%.3f, ADX %.1f +DI baskin" % (k60_slope_pct, adx_v))
         elif direction == "SHORT" and bear_htf and trend_ok and di_bear:
-            score += 25; reasons.append("4s Kalman trend asagi, 1s egim negatif, ADX %.1f -DI baskin" % adx_v)
+            score += 25; reasons.append("4s Kalman asagi, 1s egim %.3f, ADX %.1f -DI baskin" % (k60_slope_pct, adx_v))
         else:
             return None
 
@@ -162,9 +164,9 @@ def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
 
         # 4) OI (10)
         if direction == "LONG" and oi_chg > 0.005:
-            score += 10; reasons.append("Acik pozisyon 1s icinde +%.1f%% (para giriyor)" % (oi_chg * 100))
+            score += 10; reasons.append("Acik pozisyon +%.1f%% (para giriyor)" % (oi_chg * 100))
         elif direction == "SHORT" and oi_chg > 0.005:
-            score += 6; reasons.append("Acik pozisyon +%.1f%% (short'ta dikkat, kalabaliklasma olabilir)" % (oi_chg * 100))
+            score += 6; reasons.append("Acik pozisyon +%.1f%% (short'ta dikkat)" % (oi_chg * 100))
 
         # 5) Funding (5)
         if direction == "LONG" and funding_ok_long:
@@ -190,7 +192,7 @@ def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
         elif direction == "SHORT" and last < week_open:
             score += 5
 
-        # ================= KURULUM =================
+        # KURULUM
         if direction == "LONG":
             base = nearest_sup if near_support else (pd_low if abs(last - pd_low) / last < 0.01 else last)
         else:
@@ -204,13 +206,13 @@ def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
             tp1 = max(entry * (1 + TP1_MIN_PCT), entry + ATR_TP1_MULT * atr60)
             tp2 = max(entry * (1 + TP2_MIN_PCT), entry + ATR_TP2_MULT * atr60)
             if nearest_res and tp1 > nearest_res * 0.999:
-                reasons.append("Not: TP1 yolu uzerinde direnc (%.8g) - kismi kar almayi dusun" % nearest_res)
+                reasons.append("Not: TP1 yolu uzerinde direnc (%.8g)" % nearest_res)
         else:
             stop = entry + stop_dist
             tp1 = min(entry * (1 - TP1_MIN_PCT), entry - ATR_TP1_MULT * atr60)
             tp2 = min(entry * (1 - TP2_MIN_PCT), entry - ATR_TP2_MULT * atr60)
             if nearest_sup and tp1 < nearest_sup * 1.001:
-                reasons.append("Not: TP1 yolu uzerinde destek (%.8g) - kismi kar almayi dusun" % nearest_sup)
+                reasons.append("Not: TP1 yolu uzerinde destek (%.8g)" % nearest_sup)
 
         zone = float(base) if base else entry
 
@@ -235,16 +237,20 @@ def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
 
 def backtest_symbol(symbol: str, df15: pd.DataFrame, df60: pd.DataFrame,
                     df240: pd.DataFrame, horizon_bars: int = 288,
-                    btc15: pd.DataFrame | None = None) -> pd.DataFrame:
+                    btc15: pd.DataFrame | None = None,
+                    lookback_bars: int | None = None) -> pd.DataFrame:
     """
     Gercekci backtest:
     - Stop: fiyatta %5
     - TP1: fiyatta %5, TP2: fiyatta %7
     - BTC korelasyon filtresi (btc15 verilirse)
-    - 72 saat sonra hala acik olan islemler 'TIMEOUT' olarak kapatilir
+    - horizon_bars sonra hala acik olan islemler 'TIMEOUT' kapatilir
+    - lookback_bars: kac bar geriye bakilacagi (None ise config BACKTEST_BARS)
     """
     rows = []
-    start = max(120, len(df15) - 2000)
+    if lookback_bars is None:
+        lookback_bars = BACKTEST_BARS
+    start = max(120, len(df15) - lookback_bars)
 
     btc_trend_series = None
     if btc15 is not None and len(btc15) > 60:
@@ -332,6 +338,7 @@ def backtest_symbol(symbol: str, df15: pd.DataFrame, df60: pd.DataFrame,
 
 
 def diagnose(data: dict) -> dict:
+    """analyze_symbol ile ayni mantigi kullanan teshis."""
     df60 = data.get("df_60"); df240 = data.get("df_240"); df15 = data.get("df_15")
     if df60 is None or df240 is None or len(df60) < 60 or len(df240) < 40:
         return {"ok": False, "neden": "yetersiz veri"}
@@ -339,15 +346,13 @@ def diagnose(data: dict) -> dict:
     k240 = ind.kalman_trend(df240["close"])
     a60 = ind.adx(df60)
     q15 = ind.qqe(df15["close"]) if df15 is not None and len(df15) > 20 else None
-    k60_slope_pct = float(k60["kalman_slope_pct"].iloc[-1])
-    bull_240 = bool(k240["kalman_above"].iloc[-1])
-    bear_240 = not bull_240
-    bull = bull_240 and k60_slope_pct > 0
-    bear = bear_240 and k60_slope_pct < 0
+
+    bull_htf, bear_htf, k60_slope_pct = _htf_trend(k60, k240)
+
     adx_v = float(a60["adx"].iloc[-1])
     reasons = []
-    if not (bull or bear):
-        t240 = "YUKARI" if bull_240 else "ASAGI"
+    if not (bull_htf or bear_htf):
+        t240 = "YUKARI" if bool(k240["kalman_above"].iloc[-1]) else "ASAGI"
         reasons.append("4s trend " + t240 + " ama 1s egim %.3f (hizalanma yok)" % k60_slope_pct)
     if adx_v < 20:
         reasons.append("ADX dusuk (%.1f < 20), trend siddeti yetersiz" % adx_v)
