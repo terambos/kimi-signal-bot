@@ -124,16 +124,28 @@ def backtest(symbols):
         if df15.empty or df60.empty or df240.empty:
             print("  veri yok, atlaniyor")
             continue
+        # BTC verisini bir kez cek (korelasyon filtresi icin)
+        btc15 = md.get_klines("BTCUSDT", "15", BACKTEST_BARS) if sym != "BTCUSDT" else None
         res = sg.backtest_symbol(sym, df15, df60, df240,
-                                 horizon_bars=BACKTEST_HORIZON_BARS)
+                                 horizon_bars=BACKTEST_HORIZON_BARS,
+                                 btc15=btc15)
         if res.empty:
             print("  skor>=70 sinyal uretilmedi (yeterli veri/kosul yok)")
             continue
-        tp1 = res["tp1"].mean() * 100
+                tp1 = res["tp1"].mean() * 100
         tp2 = res["tp2"].mean() * 100
+        stop_rate = res["stop"].mean() * 100
+        # net sonuc: TP1 vuruldu ve stop'tan once miydi
+        net_win = ((res["first"] == "TP1") | (res["first"] == "TP2")).mean() * 100
+        net_loss = (res["first"] == "STOP").mean() * 100
         print("  sinyal sayisi : %d (son ~%.0f saat 15dk verisi)" % (len(res), len(df15) * 0.25))
-        print("  TP1 isabet    : %.0f%%" % tp1)
-        print("  TP2 isabet    : %.0f%%" % tp2)
+        print("  TP1 isabet    : %.0f%% (stop olmadan)" % tp1)
+        print("  TP2 isabet    : %.0f%% (stop olmadan)" % tp2)
+        print("  Stop orani    : %.0f%%" % stop_rate)
+        print("  --- NET SONUC (stop'lu) ---")
+        print("  Kazanc        : %.0f%%" % net_win)
+        print("  Kayip         : %.0f%%" % net_loss)
+        print("  Kar orani     : %.0f%% (kazanc / (kazanc+kayip))" % (100 * net_win / max(1, net_win + net_loss)))
         print("  Ort. MFE/MAE  : %+.2f%% / %+.2f%% (%d bar = %.0f saat pencere)" % (
             res["mfe_pct"].mean(), res["mae_pct"].mean(),
             BACKTEST_HORIZON_BARS, BACKTEST_HORIZON_BARS * 0.25))
