@@ -71,8 +71,9 @@ def qqe(close: pd.Series, rsi_len: int = 14, smooth: int = 5,
     out = pd.DataFrame({
         "rsi": rsi, "qqe_rsi": rsi_ma, "qqe_upper": upper, "qqe_lower": lower,
     }, index=close.index)
-    cross_up = (out["qqe_rsi"] > out["qqe_lower"]) & (out["qqe_rsi"].shift(1) <= out["qqe_lower"].shift(1))
-    cross_dn = (out["qqe_rsi"] < out["qqe_upper"]) & (out["qqe_rsi"].shift(1) >= out["qqe_upper"].shift(1))
+# Klasik QQE: RSI cizgisi 50 seviyesini kesince momentum donusu sayilir
+    cross_up = (out["qqe_rsi"] > 50) & (out["qqe_rsi"].shift(1) <= 50)
+    cross_dn = (out["qqe_rsi"] < 50) & (out["qqe_rsi"].shift(1) >= 50)
     out["qqe_cross_up"] = cross_up
     out["qqe_cross_dn"] = cross_dn
     # indicators burada 3 barlik "taze" tanimi uretir; signals.py bunu dogrudan kullanir.
