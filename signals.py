@@ -88,7 +88,6 @@ def analyze_symbol(data: dict) -> dict | None:
     oi_chg = 0.0
     oi_df = data.get("oi_df")
     if oi_df is not None and len(oi_df) >= 5:
-        # 15dk periyotta 4 bar geriye = 1 saat
         oi_chg = _pct(float(oi_df["openInterest"].iloc[-1]),
                       float(oi_df["openInterest"].iloc[-5]))
 
@@ -102,7 +101,6 @@ def analyze_symbol(data: dict) -> dict | None:
     nearest_sup = supports[0]["price"] if supports else None
     nearest_res = resists[0]["price"] if resists else None
 
-    # Kalite icin tolerans 0.25%
     SR_TOL = 0.0025
     sr_dist_sup = abs(last - nearest_sup) / last if nearest_sup else 9
     sr_dist_res = abs(last - nearest_res) / last if nearest_res else 9
@@ -116,7 +114,6 @@ def analyze_symbol(data: dict) -> dict | None:
     def build(direction):
         score, reasons = 0, []
 
-        # On filtre: asiri funding'de ters yonde sinyal uretme
         if direction == "LONG" and funding > FUNDING_BLOCK:
             return None
         if direction == "SHORT" and funding < -FUNDING_BLOCK:
@@ -196,4 +193,72 @@ def analyze_symbol(data: dict) -> dict | None:
 
         return {
             "symbol": data["symbol"], "direction": direction,
-            "price": round(entry, 8), "entry_
+            "price": round(entry, 8), "entry_zone": round(zone, 8),
+            "tp1": round(tp1, 8), "tp2": round(tp2, 8),
+            "atr15": round(atr15, 8), "atr1h": round(atr60, 8),
+            "score": min(score, 100), "adx": round(adx_v, 1),
+            "funding": funding, "oi_chg_1h": round(oi_chg * 100, 2),
+            "vol_ratio": round(vol_ratio, 2),
+            "reasons": reasons,
+        }
+
+    long_sig = build("LONG")
+    short_sig = build("SHORT")
+    if long_sig and short_sig:
+        return long_sig if long_sig["score"] >= short_sig["score"] else short_sig
+    return long_sig or short_sig
+
+
+def backtest_symbol(symbol: str, df15: pd.DataFrame, df60: pd.DataFrame,
+                    df240: pd.DataFrame, horizon_bars: int = 16) -> pd.DataFrame:
+    rows = []
+    start = max(120, len(df15) - 2000)
+    for i in range(start, len(df15) - horizon_bars - 1):
+        sub = {"df_15": df15.iloc[:i + 1],
+               "df_60": df60[df60.index <= df15.index[i]],
+               "df_240": df240[df240.index <= df15.index[i]],
+               "symbol": symbol, "funding": 0.0, "oi_df": None}
+        sig = analyze_symbol(sub)
+        if not sig or sig["score"] < 70:
+            continue
+        fut_h = df15["high"].iloc[i + 1:i + 1 + horizon_bars].to_numpy()
+        fut_l = df15["low"].iloc[i + 1:i + 1 + horizon_bars].to_numpy()
+        entry = sig["price"]
+        tp1_hit = np.any(fut_h >= sig["tp1"]) if sig["direction"] == "LONG" else np.any(fut_l <= sig["tp1"])
+        tp2_hit = np.any(fut_h >= sig["tp2"]) if sig["direction"] == "LONG" else np.any(fut_l <= sig["tp2"])
+        if sig["direction"] == "LONG":
+            mae = ((fut_l.min() - entry) / entry) if len(fut_l) else 0
+            mfe = ((fut_h.max() - entry) / entry) if len(fut_h) else 0
+        else:
+            mae = ((entry - fut_h.max()) / entry) if len(fut_h) else 0
+            mfe = ((entry - fut_l.min()) / entry) if len(fut_l) else 0
+        rows.append({"time": df15.index[i], "dir": sig["direction"], "score": sig["score"],
+                     "tp1": tp1_hit, "tp2": tp2_hit, "mae_pct": round(mae * 100, 2),
+                     "mfe_pct": round(mfe * 100, 2)})
+    return pd.DataFrame(rows)
+
+
+def diagnose(data: dict) -> dict:
+    df60 = data.get("df_60"); df240 = data.get("df_240"); df15 = data.get("df_15")
+    if df60 is None or df240 is None or len(df60) < 60 or len(df240) < 40:
+        return {"ok": False, "neden": "yetersiz veri"}
+    k60 = ind.kalman_trend(df60["close"])
+    k240 = ind.kalman_trend(df240["close"])
+    a60 = ind.adx(df60)
+    q15 = ind.qqe(df15["close"]) if df15 is not None and len(df15) > 20 else None
+    bull = bool(k60["kalman_above"].iloc[-1]) and bool(k240["kalman_above"].iloc[-1])
+    bear = (not bool(k60["kalman_above"].iloc[-1])) and (not bool(k240["kalman_above"].iloc[-1]))
+    adx_v = float(a60["adx"].iloc[-1])
+    reasons = []
+    if not (bull or bear):
+        t60 = "YUKARI" if k60["kalman_above"].iloc[-1] else "ASAGI"
+        t240 = "YUKARI" if k240["kalman_above"].iloc[-1] else "ASAGI"
+        reasons.append("1s trend " + t60 + " ama 4s trend " + t240 + " (hizalanma yok)")
+    if adx_v < 20:
+        reasons.append("ADX dusuk (%.1f < 20), trend siddeti yetersiz" % adx_v)
+    if q15 is not None:
+        fresh_up = bool(q15["qqe_fresh_up"].iloc[-1])
+        fresh_dn = bool(q15["qqe_fresh_dn"].iloc[-1])
+        if not (fresh_up or fresh_dn):
+            reasons.append("QQE momentum donusu yok (son %d barda kesisme yok)" % QQE_FRESH_BARS)
+    return {"ok": not reasons, "neden": "; ".join(reasons) if reasons else "kosullar uygun"}
