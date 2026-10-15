@@ -24,14 +24,11 @@ def atr(df: pd.DataFrame, n: int = 14) -> pd.Series:
 
 
 # ---------- Kalman Trend Filtresi ----------
-# 1-boyutlu sabit-hiz Kalman: fiyatin "seviye" ve "egim"ini ayrik gurultuden ayirir.
-# cikti: kalman_slope (trend yonu/gucu), kalman_slope_norm (normalize)
 def kalman_trend(close: pd.Series, q: float = 0.01, r: float = 0.5) -> pd.DataFrame:
     c = close.to_numpy(dtype=float)
     n = len(c)
     level = np.full(n, np.nan)
     slope = np.full(n, np.nan)
-    # durum: [seviye, egim]
     x = np.array([c[0], 0.0])
     P = np.eye(2) * 10.0
     F = np.array([[1.0, 1.0], [0.0, 1.0]])
@@ -48,14 +45,13 @@ def kalman_trend(close: pd.Series, q: float = 0.01, r: float = 0.5) -> pd.DataFr
         P = (np.eye(2) - np.outer(K, H)) @ P
         level[i], slope[i] = x
     out = pd.DataFrame({"kalman_level": level, "kalman_slope": slope}, index=close.index)
-    # normalize egim: fiyatin yuzde kaci kadar egim var (momentum siddeti)
     eps = 1e-9
     out["kalman_slope_pct"] = out["kalman_slope"] / (np.abs(out["kalman_level"]) + eps) * 100.0
     out["kalman_above"] = close.to_numpy(dtype=float) > out["kalman_level"]
     return out
 
 
-# ---------- QQE Momentum (RSI'nin duzgunlesmis + ATR bantli hali) ----------
+# ---------- QQE Momentum ----------
 def qqe(close: pd.Series, rsi_len: int = 14, smooth: int = 5,
         q_len: int = 14, factor: float = 4.236) -> pd.DataFrame:
     delta = close.diff()
@@ -75,12 +71,11 @@ def qqe(close: pd.Series, rsi_len: int = 14, smooth: int = 5,
     out = pd.DataFrame({
         "rsi": rsi, "qqe_rsi": rsi_ma, "qqe_upper": upper, "qqe_lower": lower,
     }, index=close.index)
-    # Momentum donusu: qqe_rsi alt banti yukari keserse LONG uyaran,
-    # ust banti asagi keserse SHORT uyaran. "Taze kesisme" son 3 barda mi?
     cross_up = (out["qqe_rsi"] > out["qqe_lower"]) & (out["qqe_rsi"].shift(1) <= out["qqe_lower"].shift(1))
     cross_dn = (out["qqe_rsi"] < out["qqe_upper"]) & (out["qqe_rsi"].shift(1) >= out["qqe_upper"].shift(1))
     out["qqe_cross_up"] = cross_up
     out["qqe_cross_dn"] = cross_dn
+    # indicators burada 3 barlik "taze" tanimi uretir; signals.py bunu dogrudan kullanir.
     out["qqe_fresh_up"] = cross_up.rolling(3, min_periods=1).max().astype(bool)
     out["qqe_fresh_dn"] = cross_dn.rolling(3, min_periods=1).max().astype(bool)
     out["qqe_bull_zone"] = out["qqe_rsi"] > 50
@@ -88,10 +83,11 @@ def qqe(close: pd.Series, rsi_len: int = 14, smooth: int = 5,
 
 
 # ---------- Hacim ----------
-def volume_signals(df: pd.DataFrame) -> pd.DataFrame:
+def volume_signals(df: pd.DataFrame, spike_mult: float = 2.0) -> pd.DataFrame:
+    """spike_mult: 20 barlik ortalamaya gore hacim patlamasi esigi (kalite icin 2.0)."""
     vol = df["volume"]
     vol_sma = vol.rolling(20, min_periods=5).mean()
-    spike = vol > 1.8 * vol_sma
+    spike = vol > spike_mult * vol_sma
     obv = (np.sign(df["close"].diff()).fillna(0) * vol).cumsum()
     obv_slope = obv.diff(5)
     out = pd.DataFrame({
@@ -102,7 +98,7 @@ def volume_signals(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-# ---------- ADX (trend siddeti) ----------
+# ---------- ADX ----------
 def adx(df: pd.DataFrame, n: int = 14) -> pd.DataFrame:
     h, l, c = df["high"], df["low"], df["close"]
     up_move = h.diff()
@@ -119,7 +115,7 @@ def adx(df: pd.DataFrame, n: int = 14) -> pd.DataFrame:
     return pd.DataFrame({"adx": adx_, "plus_di": plus_di, "minus_di": minus_di}, index=df.index)
 
 
-# ---------- VWAP (gunluk oturum) ----------
+# ---------- VWAP ----------
 def vwap(df: pd.DataFrame) -> pd.Series:
     tp = (df["high"] + df["low"] + df["close"]) / 3.0
     v = df["volume"]
@@ -132,10 +128,6 @@ def vwap(df: pd.DataFrame) -> pd.Series:
 # ---------- Destek / Direnc ----------
 def strong_sr(df: pd.DataFrame, left: int = 3, right: int = 3,
               lookback: int = 96) -> dict:
-    """
-    Son 'lookback' 15d bar (24s = ~1gun, 96 = ~1gun) icindeki swing high/low'lardan
-    en az 2 dokunmus seviyeleri dondurur + onceki gun H/L/C + haftalik acilis.
-    """
     d = df.iloc[-lookback:].copy()
     highs = d["high"].to_numpy()
     lows = d["low"].to_numpy()
@@ -173,8 +165,6 @@ def strong_sr(df: pd.DataFrame, left: int = 3, right: int = 3,
     prev_day = df.iloc[-96:] if len(df) >= 96 else df
     pd_high = prev_day["high"].max()
     pd_low = prev_day["low"].min()
-    # haftalik acilis (UTC pazartesi)
-    # haftalik acilis: UTC pazartesi 00:00'dan sonraki ilk bar
     week_key = (df.index - pd.to_timedelta((df.index.dayofweek), unit="D")).floor("D")
     week_open = df.groupby(week_key)["open"].first().iloc[-1]
     return {
