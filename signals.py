@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """
 Sinyal motoru (kalite odakli):
-- HTF (1s+4s) Kalman trendi ZORUNLU ve hizali olmali
+- HTF (1s+4s) Kalman trendi: 4s ana yon, 1s egim teyidi (pullback toleransli)
 - QQE momentum donusu ZORUNLU (taze)
 - Hacim spike esigi 2.0x (daha guclu teyit)
 - Open Interest artisi (gercek veri)
 - Funding asiriysa ters uyar
 - Fiyat guclu S/R bolgesine yakin olmali (tolerans 0.25%)
 - BTC korelasyon filtresi: BTC trendi tersse altcoin sinyali iptal
-- Stop: fiyatta %5, TP1: %5, TP2: %10
+- Stop: fiyatta %5, TP1: %5, TP2: %7
 Cikti: yon, giris bolgesi, TP1/TP2, stop, guven skoru (0-100), gerekceler.
 """
 import numpy as np
@@ -59,12 +59,17 @@ def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
     if len(bar_range) and (bar_range.max() > ANOMALY_ATR_MULT * atr15):
         return None
 
-    # ---- HTF trend (Kalman) ----
+    # ---- HTF trend (Kalman) — PULLBACK TOLERANSLI ----
     k60 = ind.kalman_trend(df60["close"])
     k240 = ind.kalman_trend(df240["close"])
     k15 = ind.kalman_trend(df15["close"])
-    bull_htf = bool(k60["kalman_above"].iloc[-1]) and bool(k240["kalman_above"].iloc[-1])
-    bear_htf = (not bool(k60["kalman_above"].iloc[-1])) and (not bool(k240["kalman_above"].iloc[-1]))
+
+    k60_slope_pct = float(k60["kalman_slope_pct"].iloc[-1])
+    bull_240 = bool(k240["kalman_above"].iloc[-1])
+    bear_240 = not bull_240
+    # 4s yon ana belirleyici; 1s egim teyit ediyor (pullback kabul)
+    bull_htf = bull_240 and k60_slope_pct > 0
+    bear_htf = bear_240 and k60_slope_pct < 0
 
     # ---- ADX filtre ----
     a60 = ind.adx(df60)
@@ -135,9 +140,9 @@ def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
 
         # 1) HTF trend (25)
         if direction == "LONG" and bull_htf and trend_ok and di_bull:
-            score += 25; reasons.append("1s+4s Kalman trend yukari, ADX %.1f +DI baskin" % adx_v)
+            score += 25; reasons.append("4s Kalman trend yukari, 1s egim pozitif, ADX %.1f +DI baskin" % adx_v)
         elif direction == "SHORT" and bear_htf and trend_ok and di_bear:
-            score += 25; reasons.append("1s+4s Kalman trend asagi, ADX %.1f -DI baskin" % adx_v)
+            score += 25; reasons.append("4s Kalman trend asagi, 1s egim negatif, ADX %.1f -DI baskin" % adx_v)
         else:
             return None
 
@@ -229,14 +234,14 @@ def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
 
 
 def backtest_symbol(symbol: str, df15: pd.DataFrame, df60: pd.DataFrame,
-                    df240: pd.DataFrame, horizon_bars: int = 192,
+                    df240: pd.DataFrame, horizon_bars: int = 288,
                     btc15: pd.DataFrame | None = None) -> pd.DataFrame:
     """
     Gercekci backtest:
     - Stop: fiyatta %5
-    - TP1: fiyatta %5, TP2: fiyatta %10
+    - TP1: fiyatta %5, TP2: fiyatta %7
     - BTC korelasyon filtresi (btc15 verilirse)
-    - 48 saat sonra hala acik olan islemler 'TIMEOUT' olarak kapatilir
+    - 72 saat sonra hala acik olan islemler 'TIMEOUT' olarak kapatilir
     """
     rows = []
     start = max(120, len(df15) - 2000)
@@ -298,12 +303,10 @@ def backtest_symbol(symbol: str, df15: pd.DataFrame, df60: pd.DataFrame,
                     exit_price = sig["tp2"]
                     break
 
-        # Timeout: hicbir olay olmadiysa son kapanis
         if first_event is None and len(fut_c):
             first_event = "TIMEOUT"
             exit_price = float(fut_c[-1])
 
-        # Net PnL (fiyat yuzdesi)
         if exit_price is None:
             pnl_pct = 0.0
         elif sig["direction"] == "LONG":
@@ -336,14 +339,16 @@ def diagnose(data: dict) -> dict:
     k240 = ind.kalman_trend(df240["close"])
     a60 = ind.adx(df60)
     q15 = ind.qqe(df15["close"]) if df15 is not None and len(df15) > 20 else None
-    bull = bool(k60["kalman_above"].iloc[-1]) and bool(k240["kalman_above"].iloc[-1])
-    bear = (not bool(k60["kalman_above"].iloc[-1])) and (not bool(k240["kalman_above"].iloc[-1]))
+    k60_slope_pct = float(k60["kalman_slope_pct"].iloc[-1])
+    bull_240 = bool(k240["kalman_above"].iloc[-1])
+    bear_240 = not bull_240
+    bull = bull_240 and k60_slope_pct > 0
+    bear = bear_240 and k60_slope_pct < 0
     adx_v = float(a60["adx"].iloc[-1])
     reasons = []
     if not (bull or bear):
-        t60 = "YUKARI" if k60["kalman_above"].iloc[-1] else "ASAGI"
-        t240 = "YUKARI" if k240["kalman_above"].iloc[-1] else "ASAGI"
-        reasons.append("1s trend " + t60 + " ama 4s trend " + t240 + " (hizalanma yok)")
+        t240 = "YUKARI" if bull_240 else "ASAGI"
+        reasons.append("4s trend " + t240 + " ama 1s egim %.3f (hizalanma yok)" % k60_slope_pct)
     if adx_v < 20:
         reasons.append("ADX dusuk (%.1f < 20), trend siddeti yetersiz" % adx_v)
     if q15 is not None:
