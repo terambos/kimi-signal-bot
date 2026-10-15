@@ -100,7 +100,7 @@ def sleep_between():
 def fetch_all(symbol: str, tfs: tuple = ("15", "60", "240"), ticker_info: dict | None = None) -> dict:
     out = {"symbol": symbol}
     for tf in tfs:
-    out[f"df_{tf}"] = get_klines(symbol, tf, limit=200)
+        out[f"df_{tf}"] = get_klines(symbol, tf, limit=200)
         sleep_between()
     if ticker_info is not None:
         out.update(ticker_info.get(symbol, {}))
