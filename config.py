@@ -21,9 +21,9 @@ BYBIT_BASE = "https://api.bybit.com"
 
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT   = 465
-MAIL_FROM   = os.environ.get("MAIL_FROM", "terambos44@gmail.com")
-MAIL_TO     = os.environ.get("MAIL_TO", "terambos44@gmail.com")
-GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "lgdvpdkqjeekwgzp")
+MAIL_FROM   = os.environ.get("MAIL_FROM", "")
+MAIL_TO     = os.environ.get("MAIL_TO", "")
+GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
 
 MAIL_ON_STRONG = True
 HOURLY_DIGEST  = True
@@ -42,14 +42,18 @@ BACKTEST_HORIZON_BARS = 96
 ANOMALY_LOOKBACK = 3
 ANOMALY_ATR_MULT = 2.5
 FUNDING_BLOCK = 0.00075
-QQE_FRESH_BARS = 6
+QQE_FRESH_BARS = 4          # 6 -> 4 : kaliteyi korurken sinyal yakalanabilir hale getirir
 
 SCAN_INTERVAL_MIN = 15
-REQUEST_SLEEP = 0.25
+REQUEST_SLEEP = 0.15        # paralel cekimde daha az gerekli
+MAX_WORKERS = 8             # paralel sembol cekimi
 
 LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 SIGNAL_LOG = os.path.join(LOG_DIR, "sinyal_log.csv")
 TRADE_LOG  = os.path.join(LOG_DIR, "trade_gunlugu.csv")
+
+# Ayni sinyalin tekrar mail atmasini engelleyen pencere (dakika)
+SIGNAL_COOLDOWN_MIN = 60
 
 NEWS_ENABLED = True
 NEWS_RSS = [
