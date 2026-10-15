@@ -30,7 +30,7 @@ def _get(path: str, params: dict) -> dict:
     return {"retCode": -1, "result": {}}
 
 
-def get_klines(symbol: str, interval: str, limit: int = 300) -> pd.DataFrame:
+def get_klines(symbol: str, interval: str, limit: int = 200) -> pd.DataFrame:
     rows = []
     end = None
     remaining = limit
