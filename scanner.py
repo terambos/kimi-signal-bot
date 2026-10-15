@@ -43,13 +43,16 @@ def run_scan(verbose=True, explain=False) -> list:
 
     data_map = md.fetch_all_parallel(SYMBOLS)
 
-    # BTC trendini bir kez hesapla (korelasyon filtresi icin)
+    # BTC trendini her zaman hesapla (korelasyon filtresi icin)
     btc_bull = None
-    btc_data = data_map.get("BTCUSDT")
-    if btc_data and btc_data.get("df_60") is not None:
+    try:
         import indicators as ind
-        btc_k = ind.kalman_trend(btc_data["df_60"]["close"])
-        btc_bull = bool(btc_k["kalman_above"].iloc[-1])
+        btc_df60 = md.get_klines("BTCUSDT", "60", 200)
+        if not btc_df60.empty:
+            btc_k = ind.kalman_trend(btc_df60["close"])
+            btc_bull = bool(btc_k["kalman_above"].iloc[-1])
+    except Exception as e:
+        print("[BTC TREND HATASI]", e)
 
     for sym in SYMBOLS:
         data = data_map.get(sym)
@@ -145,18 +148,24 @@ def backtest(symbols):
         tp1 = res["tp1"].mean() * 100
         tp2 = res["tp2"].mean() * 100
         stop_rate = res["stop"].mean() * 100
-        net_win = ((res["first"] == "TP1") | (res["first"] == "TP2")).mean() * 100
-        net_loss = (res["first"] == "STOP").mean() * 100
+        timeout_rate = (res["first"] == "TIMEOUT").mean() * 100
+        avg_pnl = res["pnl_pct"].mean()
+        total_pnl = res["pnl_pct"].sum()
+        win_rate = (res["pnl_pct"] > 0).mean() * 100
+        # 20 USD marjin, 20x kaldirac -> fiyat %1 = 4 USD
+        avg_pnl_usd = avg_pnl / 100 * 400   # 400 USD efektif pozisyon
 
         print("  sinyal sayisi : %d (son ~%.0f saat 15dk verisi)" % (len(res), len(df15) * 0.25))
-        print("  TP1 isabet    : %.0f%% (stop olmadan)" % tp1)
-        print("  TP2 isabet    : %.0f%% (stop olmadan)" % tp2)
+        print("  TP1 isabet    : %.0f%%" % tp1)
+        print("  TP2 isabet    : %.0f%%" % tp2)
         print("  Stop orani    : %.0f%%" % stop_rate)
-        print("  --- NET SONUC (stop'lu) ---")
-        print("  Kazanc        : %.0f%%" % net_win)
-        print("  Kayip         : %.0f%%" % net_loss)
-        print("  Kar orani     : %.0f%% (kazanc / (kazanc+kayip))" % (100 * net_win / max(1, net_win + net_loss)))
-        print("  Ort. MFE/MAE  : %+.2f%% / %+.2f%% (%d bar = %.0f saat pencere)" % (
+        print("  Timeout orani : %.0f%% (48 saatte kapanmayan)" % timeout_rate)
+        print("  --- SONUC ---")
+        print("  Kazanma orani : %.0f%% (pnl > 0)" % win_rate)
+        print("  Ort. PnL      : %+.3f%% (fiyat)" % avg_pnl)
+        print("  Toplam PnL    : %+.2f%% (fiyat)" % total_pnl)
+        print("  Ort. PnL (400 USD efektif) : %+.2f USD" % avg_pnl_usd)
+        print("  Ort. MFE/MAE  : %+.2f%% / %+.2f%% (%d bar = %.0f saat)" % (
             res["mfe_pct"].mean(), res["mae_pct"].mean(),
             BACKTEST_HORIZON_BARS, BACKTEST_HORIZON_BARS * 0.25))
         res.to_csv(f"backtest_{sym}.csv", index=False)
