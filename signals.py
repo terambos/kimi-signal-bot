@@ -262,3 +262,13 @@ def diagnose(data: dict) -> dict:
         if not (fresh_up or fresh_dn):
             reasons.append("QQE momentum donusu yok (son %d barda kesisme yok)" % QQE_FRESH_BARS)
     return {"ok": not reasons, "neden": "; ".join(reasons) if reasons else "kosullar uygun"}
+  
+    # BTC 1s trendi aşağıysa altcoin LONG alma, yukarıysa altcoin SHORT alma
+    if symbol != "BTCUSDT":
+    btc_df = md.get_klines("BTCUSDT", "60", 200)
+    btc_k = ind.kalman_trend(btc_df["close"])
+    btc_bull = bool(btc_k["kalman_above"].iloc[-1])
+    if direction == "LONG" and not btc_bull:
+        return None
+    if direction == "SHORT" and btc_bull:
+        return None
