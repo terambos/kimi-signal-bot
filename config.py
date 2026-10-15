@@ -31,7 +31,7 @@ HOURLY_DIGEST  = True
 # --- STOP ve TP (FIYAT yuzdesi olarak) ---
 STOP_PCT     = 0.05      # fiyatta %5 stop
 TP1_MIN_PCT  = 0.05      # fiyatta %5 TP1
-TP2_MIN_PCT  = 0.07      # fiyatta %7 TP2 (eskiden 0.10)
+TP2_MIN_PCT  = 0.07      # fiyatta %7 TP2
 
 ATR_TP1_MULT = 0.1
 ATR_TP2_MULT = 0.1
