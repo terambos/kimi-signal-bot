@@ -124,8 +124,9 @@ def loop():
 
 
 def backtest(symbols):
+    horizon_saat = BACKTEST_HORIZON_BARS * 0.25
     for sym in symbols:
-        print("[v3.5] Backtest:", sym, "...")
+        print("[v3.6] Backtest:", sym, "...")
         df15 = md.get_klines(sym, "15", BACKTEST_BARS)
         time.sleep(0.3)
         df60 = md.get_klines(sym, "60", BACKTEST_BARS)
@@ -140,7 +141,8 @@ def backtest(symbols):
 
         res = sg.backtest_symbol(sym, df15, df60, df240,
                                  horizon_bars=BACKTEST_HORIZON_BARS,
-                                 btc15=btc15)
+                                 btc15=btc15,
+                                 lookback_bars=BACKTEST_BARS)
         if res.empty:
             print("  skor>=70 sinyal uretilmedi (yeterli veri/kosul yok)")
             continue
@@ -152,14 +154,13 @@ def backtest(symbols):
         avg_pnl = res["pnl_pct"].mean()
         total_pnl = res["pnl_pct"].sum()
         win_rate = (res["pnl_pct"] > 0).mean() * 100
-        # 20 USD marjin, 20x kaldirac -> fiyat %1 = 4 USD
         avg_pnl_usd = avg_pnl / 100 * 400   # 400 USD efektif pozisyon
 
         print("  sinyal sayisi : %d (son ~%.0f saat 15dk verisi)" % (len(res), len(df15) * 0.25))
         print("  TP1 isabet    : %.0f%%" % tp1)
         print("  TP2 isabet    : %.0f%%" % tp2)
         print("  Stop orani    : %.0f%%" % stop_rate)
-        print("  Timeout orani : %.0f%% (48 saatte kapanmayan)" % timeout_rate)
+        print("  Timeout orani : %.0f%% (%.0f saatte kapanmayan)" % (timeout_rate, horizon_saat))
         print("  --- SONUC ---")
         print("  Kazanma orani : %.0f%% (pnl > 0)" % win_rate)
         print("  Ort. PnL      : %+.3f%% (fiyat)" % avg_pnl)
@@ -167,12 +168,12 @@ def backtest(symbols):
         print("  Ort. PnL (400 USD efektif) : %+.2f USD" % avg_pnl_usd)
         print("  Ort. MFE/MAE  : %+.2f%% / %+.2f%% (%d bar = %.0f saat)" % (
             res["mfe_pct"].mean(), res["mae_pct"].mean(),
-            BACKTEST_HORIZON_BARS, BACKTEST_HORIZON_BARS * 0.25))
+            BACKTEST_HORIZON_BARS, horizon_saat))
         res.to_csv(f"backtest_{sym}.csv", index=False)
         print("  detay: backtest_%s.csv" % sym)
 
 
-BOT_SURUM = "v3.5"
+BOT_SURUM = "v3.6"
 
 
 if __name__ == "__main__":
