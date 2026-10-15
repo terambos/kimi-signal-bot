@@ -2,12 +2,15 @@
 """
 Bybit PUBLIC veri katmani - API key GEREKMEZ.
 Kline + Funding + Open Interest ucretsiz public endpoint'lerden alinir.
+Paralel sembol cekimi icin ThreadPoolExecutor kullanilir.
 """
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import requests
 import pandas as pd
 
-from config import BYBIT_BASE, REQUEST_SLEEP
+from config import BYBIT_BASE, REQUEST_SLEEP, MAX_WORKERS
 
 SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": "kripto-sinyal-botu/1.0"})
@@ -61,10 +64,27 @@ def get_klines(symbol: str, interval: str, limit: int = 200) -> pd.DataFrame:
     return df
 
 
-def get_ticker(symbol: str) -> dict:
-    js = _get("/v5/market/tickers", {
+def get_open_interest(symbol: str, interval: str = "15", limit: int = 30) -> pd.DataFrame:
+    """
+    Bybit v5 open-interest endpoint'i. intervalTime: 5m, 15m, 30m, 1h, 4h, 1d
+    Donen df: index=timestamp, kolon=openInterest
+    """
+    js = _get("/v5/market/open-interest", {
         "category": "linear", "symbol": symbol,
+        "intervalTime": interval, "limit": limit,
     })
+    lst = js.get("result", {}).get("list", [])
+    if not lst:
+        return pd.DataFrame()
+    df = pd.DataFrame(lst)
+    df["timestamp"] = pd.to_datetime(df["timestamp"].astype("int64"), unit="ms", utc=True)
+    df["openInterest"] = df["openInterest"].astype(float)
+    df = df.sort_values("timestamp").set_index("timestamp")
+    return df[["openInterest"]]
+
+
+def get_ticker(symbol: str) -> dict:
+    js = _get("/v5/market/tickers", {"category": "linear", "symbol": symbol})
     lst = js.get("result", {}).get("list", [])
     if not lst:
         return {}
@@ -77,27 +97,13 @@ def get_ticker(symbol: str) -> dict:
     }
 
 
-def get_all_tickers() -> dict:
-    js = _get("/v5/market/tickers", {"category": "linear"})
-    out = {}
-    for t in js.get("result", {}).get("list", []):
-        sym = t.get("symbol")
-        try:
-            out[sym] = {
-                "funding": float(t.get("fundingRate", 0) or 0),
-                "mark": float(t.get("markPrice", 0) or 0),
-                "turnover24h": float(t.get("turnover24h", 0) or 0),
-            }
-        except (TypeError, ValueError):
-            continue
-    return out
-
-
 def sleep_between():
     time.sleep(REQUEST_SLEEP)
 
 
-def fetch_all(symbol: str, tfs: tuple = ("15", "60", "240"), ticker_info: dict | None = None) -> dict:
+def fetch_all(symbol: str, tfs: tuple = ("15", "60", "240"),
+              ticker_info: dict | None = None) -> dict:
+    """Tek sembol icin tum zaman dilimleri + funding + OI cek."""
     out = {"symbol": symbol}
     for tf in tfs:
         out[f"df_{tf}"] = get_klines(symbol, tf, limit=200)
@@ -107,5 +113,26 @@ def fetch_all(symbol: str, tfs: tuple = ("15", "60", "240"), ticker_info: dict |
     else:
         out.update(get_ticker(symbol))
     sleep_between()
-    out["oi_df"] = None
+    # OI: 15dk periyotta son 30 nokta (1s degisim icin yeter)
+    out["oi_df"] = get_open_interest(symbol, interval="15", limit=30)
     return out
+
+
+def fetch_all_parallel(symbols: list, tfs: tuple = ("15", "60", "240"),
+                       ticker_info: dict | None = None,
+                       max_workers: int = MAX_WORKERS) -> dict:
+    """
+    Sembolleri paralel cek. Donen: {symbol: data_dict}
+    Tek tek hata olsa bile digerlerini etkilemez.
+    """
+    results = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futs = {ex.submit(fetch_all, s, tfs, ticker_info): s for s in symbols}
+        for fut in as_completed(futs):
+            sym = futs[fut]
+            try:
+                results[sym] = fut.result()
+            except Exception as e:
+                print("[VERI HATASI]", sym, e)
+                results[sym] = None
+    return results
