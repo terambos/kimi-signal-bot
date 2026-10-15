@@ -7,7 +7,8 @@ Sinyal motoru (kalite odakli):
 - Open Interest artisi (gercek veri)
 - Funding asiriysa ters uyar
 - Fiyat guclu S/R bolgesine yakin olmali (tolerans 0.25%)
-Cikti: yon, giris bolgesi, TP1/TP2, guven skoru (0-100), gerekceler.
+- BTC korelasyon filtresi: BTC trendi tersse altcoin sinyali iptal
+Cikti: yon, giris bolgesi, TP1/TP2, stop, guven skoru (0-100), gerekceler.
 """
 import numpy as np
 import pandas as pd
@@ -16,7 +17,7 @@ import indicators as ind
 from config import (TP1_MIN_PCT, TP2_MIN_PCT, ATR_TP1_MULT, ATR_TP2_MULT,
                     ANOMALY_LOOKBACK, ANOMALY_ATR_MULT, FUNDING_BLOCK,
                     QQE_FRESH_BARS, SCORE_STRONG, LARGE_CAPS,
-                    LARGE_CAP_SCORE_BONUS)
+                    LARGE_CAP_SCORE_BONUS, STOP_ATR_MULT)
 
 
 def _pct(a, b):
@@ -33,7 +34,12 @@ def sig_passes(sig: dict) -> bool:
     return sig["score"] >= esik
 
 
-def analyze_symbol(data: dict) -> dict | None:
+def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
+    """
+    data: df_15, df_60, df_240, symbol, funding, oi_df iceren dict
+    btc_bull: True/False/None. None ise BTC korelasyon filtresi uygulanmaz.
+              True ise BTC trendi yukari, False ise asagi.
+    """
     df15 = data.get("df_15")
     df60 = data.get("df_60")
     df240 = data.get("df_240")
@@ -114,10 +120,19 @@ def analyze_symbol(data: dict) -> dict | None:
     def build(direction):
         score, reasons = 0, []
 
+        # --- On filtre 1: asiri funding ---
         if direction == "LONG" and funding > FUNDING_BLOCK:
             return None
         if direction == "SHORT" and funding < -FUNDING_BLOCK:
             return None
+
+        # --- On filtre 2: BTC KORELASYON (YENI) ---
+        # BTC 1s trendi tersse, altcoin sinyalini iptal et.
+        if btc_bull is not None and data["symbol"] != "BTCUSDT":
+            if direction == "LONG" and not btc_bull:
+                return None
+            if direction == "SHORT" and btc_bull:
+                return None
 
         # 1) HTF trend hizalanmasi ZORUNLU (25)
         if direction == "LONG" and bull_htf and trend_ok and di_bull:
@@ -178,12 +193,17 @@ def analyze_symbol(data: dict) -> dict | None:
             base = nearest_res if near_resist else (pd_high if abs(last - pd_high) / last < 0.01 else last)
 
         entry = float(last)
+
+        # STOP: giris +/- 0.8*ATR(1s)
+        stop_dist = STOP_ATR_MULT * atr60
         if direction == "LONG":
+            stop = entry - stop_dist
             tp1 = max(entry * (1 + TP1_MIN_PCT), entry + ATR_TP1_MULT * atr60)
             tp2 = max(entry * (1 + TP2_MIN_PCT), entry + ATR_TP2_MULT * atr60)
             if nearest_res and tp1 > nearest_res * 0.999:
                 reasons.append("Not: TP1 yolu uzerinde direnc (%.8g) - kismi kar almayi dusun" % nearest_res)
         else:
+            stop = entry + stop_dist
             tp1 = min(entry * (1 - TP1_MIN_PCT), entry - ATR_TP1_MULT * atr60)
             tp2 = min(entry * (1 - TP2_MIN_PCT), entry - ATR_TP2_MULT * atr60)
             if nearest_sup and tp1 < nearest_sup * 1.001:
@@ -195,6 +215,7 @@ def analyze_symbol(data: dict) -> dict | None:
             "symbol": data["symbol"], "direction": direction,
             "price": round(entry, 8), "entry_zone": round(zone, 8),
             "tp1": round(tp1, 8), "tp2": round(tp2, 8),
+            "stop": round(stop, 8),
             "atr15": round(atr15, 8), "atr1h": round(atr60, 8),
             "score": min(score, 100), "adx": round(adx_v, 1),
             "funding": funding, "oi_chg_1h": round(oi_chg * 100, 2),
@@ -210,31 +231,85 @@ def analyze_symbol(data: dict) -> dict | None:
 
 
 def backtest_symbol(symbol: str, df15: pd.DataFrame, df60: pd.DataFrame,
-                    df240: pd.DataFrame, horizon_bars: int = 16) -> pd.DataFrame:
+                    df240: pd.DataFrame, horizon_bars: int = 96,
+                    btc15: pd.DataFrame | None = None) -> pd.DataFrame:
+    """
+    Gercekci backtest:
+    - Stop-loss'lu (giris +/- STOP_ATR_MULT * ATR(1s))
+    - BTC korelasyon filtresi uygulanir (btc15 verilirse)
+    - Sonuc: her sinyal icin tp1/tp2/stop hangisi once vuruldu
+    """
     rows = []
     start = max(120, len(df15) - 2000)
+
+    # BTC trend serisini bir kez hesapla (1s Kalman)
+    btc_trend_series = None
+    if btc15 is not None and len(btc15) > 60:
+        btc_k = ind.kalman_trend(btc15["close"])
+        btc_trend_series = btc_k["kalman_above"]
+
     for i in range(start, len(df15) - horizon_bars - 1):
+        t_now = df15.index[i]
         sub = {"df_15": df15.iloc[:i + 1],
-               "df_60": df60[df60.index <= df15.index[i]],
-               "df_240": df240[df240.index <= df15.index[i]],
+               "df_60": df60[df60.index <= t_now],
+               "df_240": df240[df240.index <= t_now],
                "symbol": symbol, "funding": 0.0, "oi_df": None}
-        sig = analyze_symbol(sub)
+
+        # BTC trend o anki degeri
+        btc_bull = None
+        if btc_trend_series is not None:
+            prior = btc_trend_series[btc_trend_series.index <= t_now]
+            if len(prior):
+                btc_bull = bool(prior.iloc[-1])
+
+        sig = analyze_symbol(sub, btc_bull=btc_bull)
         if not sig or sig["score"] < 70:
             continue
+
         fut_h = df15["high"].iloc[i + 1:i + 1 + horizon_bars].to_numpy()
         fut_l = df15["low"].iloc[i + 1:i + 1 + horizon_bars].to_numpy()
         entry = sig["price"]
-        tp1_hit = np.any(fut_h >= sig["tp1"]) if sig["direction"] == "LONG" else np.any(fut_l <= sig["tp1"])
-        tp2_hit = np.any(fut_h >= sig["tp2"]) if sig["direction"] == "LONG" else np.any(fut_l <= sig["tp2"])
+        stop = sig["stop"]
+
+        # Stop ve TP'nin hangisi once vuruldu?
+        tp1_hit = tp2_hit = stop_hit = False
+        first_event = None
+        for j in range(len(fut_h)):
+            hi, lo = fut_h[j], fut_l[j]
+            if sig["direction"] == "LONG":
+                if lo <= stop:
+                    stop_hit = True; first_event = "STOP"; break
+                if hi >= sig["tp1"] and not tp1_hit:
+                    tp1_hit = True
+                    if first_event is None: first_event = "TP1"
+                if hi >= sig["tp2"]:
+                    tp2_hit = True
+                    if first_event is None: first_event = "TP2"
+                    break
+            else:
+                if hi >= stop:
+                    stop_hit = True; first_event = "STOP"; break
+                if lo <= sig["tp1"] and not tp1_hit:
+                    tp1_hit = True
+                    if first_event is None: first_event = "TP1"
+                if lo <= sig["tp2"]:
+                    tp2_hit = True
+                    if first_event is None: first_event = "TP2"
+                    break
+
         if sig["direction"] == "LONG":
             mae = ((fut_l.min() - entry) / entry) if len(fut_l) else 0
             mfe = ((fut_h.max() - entry) / entry) if len(fut_h) else 0
         else:
             mae = ((entry - fut_h.max()) / entry) if len(fut_h) else 0
             mfe = ((entry - fut_l.min()) / entry) if len(fut_l) else 0
-        rows.append({"time": df15.index[i], "dir": sig["direction"], "score": sig["score"],
-                     "tp1": tp1_hit, "tp2": tp2_hit, "mae_pct": round(mae * 100, 2),
-                     "mfe_pct": round(mfe * 100, 2)})
+
+        rows.append({
+            "time": t_now, "dir": sig["direction"], "score": sig["score"],
+            "tp1": tp1_hit, "tp2": tp2_hit, "stop": stop_hit,
+            "first": first_event,
+            "mae_pct": round(mae * 100, 2), "mfe_pct": round(mfe * 100, 2),
+        })
     return pd.DataFrame(rows)
 
 
@@ -262,13 +337,3 @@ def diagnose(data: dict) -> dict:
         if not (fresh_up or fresh_dn):
             reasons.append("QQE momentum donusu yok (son %d barda kesisme yok)" % QQE_FRESH_BARS)
     return {"ok": not reasons, "neden": "; ".join(reasons) if reasons else "kosullar uygun"}
-  
-    # BTC 1s trendi aşağıysa altcoin LONG alma, yukarıysa altcoin SHORT alma
-    if symbol != "BTCUSDT":
-    btc_df = md.get_klines("BTCUSDT", "60", 200)
-    btc_k = ind.kalman_trend(btc_df["close"])
-    btc_bull = bool(btc_k["kalman_above"].iloc[-1])
-    if direction == "LONG" and not btc_bull:
-        return None
-    if direction == "SHORT" and btc_bull:
-        return None
