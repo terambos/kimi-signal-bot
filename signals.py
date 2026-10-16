@@ -1,15 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Sinyal motoru (kalite odakli):
-- HTF trend: 4s ana yon, 1s egim teyidi (pullback toleransli)
-- QQE momentum donusu ZORUNLU (taze)
-- Hacim spike esigi 2.0x
-- Open Interest artisi (varsa)
-- Funding asiriysa ters uyar
-- Fiyat guclu S/R bolgesine yakin olmali (tolerans 0.25%)
-- BTC korelasyon filtresi: BTC trendi tersse altcoin sinyali iptal
-- Stop: fiyatta %5, TP1: %5, TP2: %7
-Cikti: yon, giris bolgesi, TP1/TP2, stop, guven skoru (0-100), gerekceler.
+Sinyal motoru v4.0 (katmanli skor):
+- ZORUNLU: 4s trend yonu + QQE momentum donusu + funding asiri degil
+- PUAN VEREN: 1s slope, ADX, DI, S/R, hacim, BTC korelasyonu, 15dk ivme
+- Skor esigi: SCORE_STRONG (mail), SCORE_WATCH (izleme)
 """
 import numpy as np
 import pandas as pd
@@ -23,19 +17,6 @@ from config import (TP1_MIN_PCT, TP2_MIN_PCT, ATR_TP1_MULT, ATR_TP2_MULT,
 
 def _pct(a, b):
     return (a - b) / b if b else 0.0
-
-
-def _htf_trend(k60: pd.DataFrame, k240: pd.DataFrame) -> tuple:
-    """
-    Ortak HTF trend mantigi: 4s yon ana belirleyici, 1s egim teyit ediyor.
-    Donen: (bull_htf, bear_htf, k60_slope_pct)
-    """
-    k60_slope_pct = float(k60["kalman_slope_pct"].iloc[-1])
-    bull_240 = bool(k240["kalman_above"].iloc[-1])
-    bear_240 = not bull_240
-    bull_htf = bull_240 and k60_slope_pct > 0
-    bear_htf = bear_240 and k60_slope_pct < 0
-    return bull_htf, bear_htf, k60_slope_pct
 
 
 def sig_passes(sig: dict) -> bool:
@@ -63,22 +44,26 @@ def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
     if atr60 <= 0 or last <= 0:
         return None
 
-    # Manipulasyon / haber spike filtresi
+    # Manipulasyon filtresi
     bar_range = (df15["high"] - df15["low"]).iloc[-ANOMALY_LOOKBACK:]
     if len(bar_range) and (bar_range.max() > ANOMALY_ATR_MULT * atr15):
         return None
 
-    # HTF trend
+    # Kalman trendler
     k60 = ind.kalman_trend(df60["close"])
     k240 = ind.kalman_trend(df240["close"])
     k15 = ind.kalman_trend(df15["close"])
-    bull_htf, bear_htf, k60_slope_pct = _htf_trend(k60, k240)
+
+    k60_slope_pct = float(k60["kalman_slope_pct"].iloc[-1])
+    bull_240 = bool(k240["kalman_above"].iloc[-1])
+    bear_240 = not bull_240
+    bull_60 = bool(k60["kalman_above"].iloc[-1])
+    bear_60 = not bull_60
 
     # ADX
     a60 = ind.adx(df60)
     adx_v = float(a60["adx"].iloc[-1])
     plus, minus = float(a60["plus_di"].iloc[-1]), float(a60["minus_di"].iloc[-1])
-    trend_ok = adx_v >= 20
     di_bull = plus > minus
     di_bear = minus > plus
 
@@ -95,10 +80,8 @@ def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
 
     # Funding
     funding = float(data.get("funding", 0) or 0)
-    funding_ok_long = funding < 0.0005
-    funding_ok_short = funding > -0.0005
 
-    # Open Interest (varsa)
+    # OI
     oi_chg = 0.0
     oi_df = data.get("oi_df")
     if oi_df is not None and len(oi_df) >= 5:
@@ -115,11 +98,11 @@ def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
     nearest_sup = supports[0]["price"] if supports else None
     nearest_res = resists[0]["price"] if resists else None
 
-    SR_TOL = 0.0025
+    SR_TOL = 0.004  # %0.4
     sr_dist_sup = abs(last - nearest_sup) / last if nearest_sup else 9
     sr_dist_res = abs(last - nearest_res) / last if nearest_res else 9
-    near_support = (nearest_sup is not None and sr_dist_sup < SR_TOL) or abs(last - pd_low) / last < 0.002
-    near_resist  = (nearest_res is not None and sr_dist_res < SR_TOL) or abs(last - pd_high) / last < 0.002
+    near_support = (nearest_sup is not None and sr_dist_sup < SR_TOL) or abs(last - pd_low) / last < 0.003
+    near_resist  = (nearest_res is not None and sr_dist_res < SR_TOL) or abs(last - pd_high) / last < 0.003
 
     bull_15 = bool(k15["kalman_above"].iloc[-1])
     bear_15 = not bull_15
@@ -127,72 +110,88 @@ def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
     # ================= SKORLAMA =================
     def build(direction):
         score, reasons = 0, []
+        mandatory_ok = True
 
+        # === ZORUNLU 1: Funding asiri degil ===
         if direction == "LONG" and funding > FUNDING_BLOCK:
             return None
         if direction == "SHORT" and funding < -FUNDING_BLOCK:
             return None
 
-        # BTC korelasyon
+        # === ZORUNLU 2: 4s trend yonu ===
+        if direction == "LONG" and not bull_240:
+            return None
+        if direction == "SHORT" and not bear_240:
+            return None
+        score += 20
+        reasons.append("4s Kalman trend %s" % ("YUKARI" if direction == "LONG" else "ASAGI"))
+
+        # === ZORUNLU 3: QQE momentum donusu ===
+        if direction == "LONG" and not fresh_up:
+            return None
+        if direction == "SHORT" and not fresh_dn:
+            return None
+        score += 20
+        reasons.append("QQE 15dk taze momentum donusu")
+
+        # === PUAN: 1s slope yonu ===
+        if direction == "LONG" and k60_slope_pct > 0:
+            score += 10; reasons.append("1s egim +%.3f" % k60_slope_pct)
+        elif direction == "SHORT" and k60_slope_pct < 0:
+            score += 10; reasons.append("1s egim %.3f" % k60_slope_pct)
+
+        # === PUAN: 1s fiyat Kalman ustu/alti ===
+        if direction == "LONG" and bull_60:
+            score += 5; reasons.append("1s fiyat Kalman ustu")
+        elif direction == "SHORT" and bear_60:
+            score += 5; reasons.append("1s fiyat Kalman alti")
+
+        # === PUAN: ADX ===
+        if adx_v >= 25:
+            score += 10; reasons.append("ADX guclu (%.1f)" % adx_v)
+        elif adx_v >= 20:
+            score += 5; reasons.append("ADX orta (%.1f)" % adx_v)
+
+        # === PUAN: DI baskinlik ===
+        if direction == "LONG" and di_bull:
+            score += 5; reasons.append("+DI baskin")
+        elif direction == "SHORT" and di_bear:
+            score += 5; reasons.append("-DI baskin")
+
+        # === PUAN: BTC korelasyon (iptal degil, puan) ===
         if btc_bull is not None and data["symbol"] != "BTCUSDT":
-            if direction == "LONG" and not btc_bull:
-                return None
-            if direction == "SHORT" and btc_bull:
-                return None
+            if (direction == "LONG" and btc_bull) or (direction == "SHORT" and not btc_bull):
+                score += 10; reasons.append("BTC trendi yonle uyumlu")
 
-        # 1) HTF trend (25)
-        if direction == "LONG" and bull_htf and trend_ok and di_bull:
-            score += 25; reasons.append("4s Kalman yukari, 1s egim +%.3f, ADX %.1f +DI baskin" % (k60_slope_pct, adx_v))
-        elif direction == "SHORT" and bear_htf and trend_ok and di_bear:
-            score += 25; reasons.append("4s Kalman asagi, 1s egim %.3f, ADX %.1f -DI baskin" % (k60_slope_pct, adx_v))
-        else:
-            return None
-
-        # 2) QQE (20)
-        if direction == "LONG" and fresh_up:
-            score += 20; reasons.append("QQE 15dk alt bandi yukari kesti (taze momentum donusu)")
-        elif direction == "SHORT" and fresh_dn:
-            score += 20; reasons.append("QQE 15dk ust bandi asagi kesti (taze momentum donusu)")
-        else:
-            return None
-
-        # 3) Hacim (15)
+        # === PUAN: Hacim ===
         if spike:
-            score += 10; reasons.append("Hacim patlamasi x%.1f (20 bar ort.)" % vol_ratio)
+            score += 10; reasons.append("Hacim patlamasi x%.1f" % vol_ratio)
         if (direction == "LONG" and obv_up) or (direction == "SHORT" and not obv_up):
-            score += 5; reasons.append("OBV egrisi yonle uyumlu")
+            score += 5; reasons.append("OBV yonle uyumlu")
 
-        # 4) OI (10)
-        if direction == "LONG" and oi_chg > 0.005:
-            score += 10; reasons.append("Acik pozisyon +%.1f%% (para giriyor)" % (oi_chg * 100))
-        elif direction == "SHORT" and oi_chg > 0.005:
-            score += 6; reasons.append("Acik pozisyon +%.1f%% (short'ta dikkat)" % (oi_chg * 100))
+        # === PUAN: OI ===
+        if oi_chg > 0.005:
+            score += 5; reasons.append("OI +%.1f%%" % (oi_chg * 100))
 
-        # 5) Funding (5)
-        if direction == "LONG" and funding_ok_long:
-            score += 5; reasons.append("Funding notr (%.4f%%)" % (funding * 100))
-        elif direction == "SHORT" and funding_ok_short:
-            score += 5; reasons.append("Funding notr (%.4f%%)" % (funding * 100))
-
-        # 6) S/R (15)
+        # === PUAN: S/R ===
         if direction == "LONG" and near_support:
-            score += 15
-            ref = nearest_sup if nearest_sup and sr_dist_sup < abs(last - pd_low) / last else pd_low
-            reasons.append("Fiyat guclu destek bolgesine yakin (%.8g)" % ref)
+            score += 15; reasons.append("Fiyat destek bolgesine yakin")
         elif direction == "SHORT" and near_resist:
-            score += 15
-            ref = nearest_res if nearest_res and sr_dist_res < abs(last - pd_high) / last else pd_high
-            reasons.append("Fiyat guclu direnc bolgesine yakin (%.8g)" % ref)
+            score += 15; reasons.append("Fiyat direnc bolgesine yakin")
 
-        # 7) 15dk ivme + haftalik
+        # === PUAN: 15dk ivme + haftalik ===
         if (direction == "LONG" and bull_15) or (direction == "SHORT" and bear_15):
-            score += 5; reasons.append("15dk Kalman ivme yonle uyumlu")
+            score += 5; reasons.append("15dk ivme yonle uyumlu")
         if direction == "LONG" and last > week_open:
-            score += 5
+            score += 5; reasons.append("Haftalik acilis uzerinde")
         elif direction == "SHORT" and last < week_open:
-            score += 5
+            score += 5; reasons.append("Haftalik acilis altinda")
 
-        # KURULUM
+        # === PUAN: Funding notr ===
+        if abs(funding) < 0.0005:
+            score += 5; reasons.append("Funding notr")
+
+        # ================= KURULUM =================
         if direction == "LONG":
             base = nearest_sup if near_support else (pd_low if abs(last - pd_low) / last < 0.01 else last)
         else:
@@ -203,16 +202,16 @@ def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
 
         if direction == "LONG":
             stop = entry - stop_dist
-            tp1 = max(entry * (1 + TP1_MIN_PCT), entry + ATR_TP1_MULT * atr60)
-            tp2 = max(entry * (1 + TP2_MIN_PCT), entry + ATR_TP2_MULT * atr60)
+            tp1 = entry * (1 + TP1_MIN_PCT)
+            tp2 = entry * (1 + TP2_MIN_PCT)
             if nearest_res and tp1 > nearest_res * 0.999:
-                reasons.append("Not: TP1 yolu uzerinde direnc (%.8g)" % nearest_res)
+                reasons.append("Not: TP1 yolunda direnc")
         else:
             stop = entry + stop_dist
-            tp1 = min(entry * (1 - TP1_MIN_PCT), entry - ATR_TP1_MULT * atr60)
-            tp2 = min(entry * (1 - TP2_MIN_PCT), entry - ATR_TP2_MULT * atr60)
+            tp1 = entry * (1 - TP1_MIN_PCT)
+            tp2 = entry * (1 - TP2_MIN_PCT)
             if nearest_sup and tp1 < nearest_sup * 1.001:
-                reasons.append("Not: TP1 yolu uzerinde destek (%.8g)" % nearest_sup)
+                reasons.append("Not: TP1 yolunda destek")
 
         zone = float(base) if base else entry
 
@@ -239,14 +238,6 @@ def backtest_symbol(symbol: str, df15: pd.DataFrame, df60: pd.DataFrame,
                     df240: pd.DataFrame, horizon_bars: int = 288,
                     btc15: pd.DataFrame | None = None,
                     lookback_bars: int | None = None) -> pd.DataFrame:
-    """
-    Gercekci backtest:
-    - Stop: fiyatta %5
-    - TP1: fiyatta %5, TP2: fiyatta %7
-    - BTC korelasyon filtresi (btc15 verilirse)
-    - horizon_bars sonra hala acik olan islemler 'TIMEOUT' kapatilir
-    - lookback_bars: kac bar geriye bakilacagi (None ise config BACKTEST_BARS)
-    """
     rows = []
     if lookback_bars is None:
         lookback_bars = BACKTEST_BARS
@@ -271,7 +262,7 @@ def backtest_symbol(symbol: str, df15: pd.DataFrame, df60: pd.DataFrame,
                 btc_bull = bool(prior.iloc[-1])
 
         sig = analyze_symbol(sub, btc_bull=btc_bull)
-        if not sig or sig["score"] < 70:
+        if not sig or sig["score"] < SCORE_STRONG:
             continue
 
         fut_h = df15["high"].iloc[i + 1:i + 1 + horizon_bars].to_numpy()
@@ -295,8 +286,7 @@ def backtest_symbol(symbol: str, df15: pd.DataFrame, df60: pd.DataFrame,
                 if hi >= sig["tp2"]:
                     tp2_hit = True
                     if first_event is None: first_event = "TP2"
-                    exit_price = sig["tp2"]
-                    break
+                    exit_price = sig["tp2"]; break
             else:
                 if hi >= stop:
                     stop_hit = True; first_event = "STOP"; exit_price = stop; break
@@ -306,8 +296,7 @@ def backtest_symbol(symbol: str, df15: pd.DataFrame, df60: pd.DataFrame,
                 if lo <= sig["tp2"]:
                     tp2_hit = True
                     if first_event is None: first_event = "TP2"
-                    exit_price = sig["tp2"]
-                    break
+                    exit_price = sig["tp2"]; break
 
         if first_event is None and len(fut_c):
             first_event = "TIMEOUT"
@@ -320,45 +309,29 @@ def backtest_symbol(symbol: str, df15: pd.DataFrame, df60: pd.DataFrame,
         else:
             pnl_pct = (entry - exit_price) / entry * 100
 
-        if sig["direction"] == "LONG":
-            mae = ((fut_l.min() - entry) / entry) if len(fut_l) else 0
-            mfe = ((fut_h.max() - entry) / entry) if len(fut_h) else 0
-        else:
-            mae = ((entry - fut_h.max()) / entry) if len(fut_h) else 0
-            mfe = ((entry - fut_l.min()) / entry) if len(fut_l) else 0
-
         rows.append({
             "time": t_now, "dir": sig["direction"], "score": sig["score"],
             "tp1": tp1_hit, "tp2": tp2_hit, "stop": stop_hit,
             "first": first_event,
             "pnl_pct": round(pnl_pct, 3),
-            "mae_pct": round(mae * 100, 2), "mfe_pct": round(mfe * 100, 2),
         })
     return pd.DataFrame(rows)
 
 
 def diagnose(data: dict) -> dict:
-    """analyze_symbol ile ayni mantigi kullanan teshis."""
     df60 = data.get("df_60"); df240 = data.get("df_240"); df15 = data.get("df_15")
     if df60 is None or df240 is None or len(df60) < 60 or len(df240) < 40:
         return {"ok": False, "neden": "yetersiz veri"}
-    k60 = ind.kalman_trend(df60["close"])
     k240 = ind.kalman_trend(df240["close"])
-    a60 = ind.adx(df60)
     q15 = ind.qqe(df15["close"]) if df15 is not None and len(df15) > 20 else None
-
-    bull_htf, bear_htf, k60_slope_pct = _htf_trend(k60, k240)
-
-    adx_v = float(a60["adx"].iloc[-1])
+    bull_240 = bool(k240["kalman_above"].iloc[-1])
+    bear_240 = not bull_240
     reasons = []
-    if not (bull_htf or bear_htf):
-        t240 = "YUKARI" if bool(k240["kalman_above"].iloc[-1]) else "ASAGI"
-        reasons.append("4s trend " + t240 + " ama 1s egim %.3f (hizalanma yok)" % k60_slope_pct)
-    if adx_v < 20:
-        reasons.append("ADX dusuk (%.1f < 20), trend siddeti yetersiz" % adx_v)
+    if not (bull_240 or bear_240):
+        reasons.append("4s trend belirsiz")
     if q15 is not None:
         fresh_up = bool(q15["qqe_fresh_up"].iloc[-1])
         fresh_dn = bool(q15["qqe_fresh_dn"].iloc[-1])
         if not (fresh_up or fresh_dn):
-            reasons.append("QQE momentum donusu yok (son %d barda kesisme yok)" % QQE_FRESH_BARS)
+            reasons.append("QQE momentum donusu yok")
     return {"ok": not reasons, "neden": "; ".join(reasons) if reasons else "kosullar uygun"}
