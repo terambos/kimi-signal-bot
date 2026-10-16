@@ -327,6 +327,8 @@ def diagnose(data: dict) -> dict:
     bull_240 = bool(k240["kalman_above"].iloc[-1])
     bear_240 = not bull_240
     reasons = []
+
+    # Zorunlu sartlar
     if not (bull_240 or bear_240):
         reasons.append("4s trend belirsiz")
     if q15 is not None:
@@ -334,4 +336,13 @@ def diagnose(data: dict) -> dict:
         fresh_dn = bool(q15["qqe_fresh_dn"].iloc[-1])
         if not (fresh_up or fresh_dn):
             reasons.append("QQE momentum donusu yok")
+
+    # Zorunlu sartlar gectiyse skoru kontrol et
+    if not reasons:
+        sig = analyze_symbol(data, btc_bull=None)
+        if sig is None:
+            reasons.append("sinyal uretilemedi (funding/S/R)")
+        elif sig["score"] < SCORE_STRONG:
+            reasons.append("skor dusuk: %d (esik %d)" % (sig["score"], SCORE_STRONG))
+
     return {"ok": not reasons, "neden": "; ".join(reasons) if reasons else "kosullar uygun"}
