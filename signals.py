@@ -203,11 +203,12 @@ def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
         # ===== DINAMIK TP =====
         if direction == "LONG":
             stop = entry - stop_dist
+            # En yakin direnc TP1, bir sonraki direnc TP2 olabilir
             if nearest_res and nearest_res > entry:
                 tp_dist_res = (nearest_res - entry) / entry
                 if tp_dist_res >= MIN_TP_DISTANCE_PCT:
-                    tp1 = nearest_res * 0.998
-                    tp2 = nearest_res * 1.02
+                    tp1 = nearest_res * 0.998  # direncten hemen once
+                    tp2 = nearest_res * 1.02   # direnc kirilirsa
                     reasons.append("TP1 = yakin direnc (%.8g), uzaklik +%.2f%%" % (nearest_res, tp_dist_res * 100))
                 else:
                     tp1 = entry * (1 + TP1_FALLBACK_PCT)
@@ -217,6 +218,7 @@ def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
                 tp1 = entry * (1 + TP1_FALLBACK_PCT)
                 tp2 = entry * (1 + TP2_FALLBACK_PCT)
 
+            # Minimum garantile
             tp1 = max(tp1, entry * (1 + TP1_MIN_PCT))
             tp2 = max(tp2, entry * (1 + TP2_MIN_PCT))
 
