@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-ANA CALISTIRICI
+ANA CALISTIRICI v4.1
   python scanner.py --once
   python scanner.py
   python scanner.py --backtest
 """
 import os
 import sys
+import json
 import time
 import pandas as pd
 from datetime import datetime, timezone
@@ -17,22 +18,39 @@ import notify
 import news
 from config import (SYMBOLS, SCAN_INTERVAL_MIN, SCORE_STRONG, SCORE_WATCH,
                     HOURLY_DIGEST, NEWS_ENABLED, BACKTEST_BARS,
-                    BACKTEST_HORIZON_BARS, SIGNAL_LOG, SIGNAL_COOLDOWN_MIN)
+                    BACKTEST_HORIZON_BARS, SIGNAL_LOG, STATE_FILE,
+                    SYMBOL_COOLDOWN_MIN)
 
 _last_digest_hour = None
 
 
-def _recent_signal(symbol: str, direction: str) -> bool:
-    if not os.path.exists(SIGNAL_LOG):
+def load_state() -> dict:
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def save_state(state: dict):
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(state, f, indent=2, ensure_ascii=False)
+
+
+def _recent_signal(state: dict, symbol: str) -> bool:
+    """state.json'da son sinyal zamani SYMBOL_COOLDOWN_MIN icinde mi?"""
+    last = state.get(symbol)
+    if not last:
         return False
     try:
-        df = pd.read_csv(SIGNAL_LOG)
-        if df.empty:
-            return False
-        df["time"] = pd.to_datetime(df["time"], utc=True, errors="coerce")
-        cutoff = pd.Timestamp.utcnow() - pd.Timedelta(minutes=SIGNAL_COOLDOWN_MIN)
-        recent = df[(df["symbol"] == symbol) & (df["direction"] == direction) & (df["time"] >= cutoff)]
-        return not recent.empty
+        # ISO 8601 formatli zaman
+        last_dt = pd.Timestamp(last)
+        if last_dt.tzinfo is None:
+            last_dt = last_dt.tz_localize("UTC")
+        cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(minutes=SYMBOL_COOLDOWN_MIN)
+        return last_dt >= cutoff
     except Exception:
         return False
 
@@ -52,6 +70,8 @@ def run_scan(verbose=True, explain=False) -> list:
             btc_bull = bool(btc_k["kalman_above"].iloc[-1])
     except Exception as e:
         print("[BTC TREND HATASI]", e)
+
+    state = load_state()
 
     for sym in SYMBOLS:
         data = data_map.get(sym)
@@ -73,15 +93,15 @@ def run_scan(verbose=True, explain=False) -> list:
                 skipped.append(sym)
             continue
 
-        # skor esikleri
         if sig["score"] >= SCORE_STRONG:
-            if _recent_signal(sym, sig["direction"]):
+            if _recent_signal(state, sym):
                 if verbose:
-                    print("%-11s skor=%d %s (cooldown)" % (sym, sig["score"], sig["direction"]))
+                    print("%-11s skor=%d %s (cooldown 4h)" % (sym, sig["score"], sig["direction"]))
                 continue
             ctx = news.context_for(sym) if NEWS_ENABLED else []
             notify.send_signal_mail(sig, ctx)
             notify.log_signal(sig)
+            state[sym] = datetime.now(timezone.utc).isoformat()
             strong.append(sig)
             if verbose:
                 print("%-11s SINYAL skor=%d %s" % (sym, sig["score"], sig["direction"]))
@@ -93,6 +113,8 @@ def run_scan(verbose=True, explain=False) -> list:
             if explain:
                 print("%-11s skor=%d (esik alti)" % (sym, sig["score"]))
             skipped.append(sym)
+
+    save_state(state)
 
     if strong:
         print("\n=== GUCLU SINYALLER ===")
@@ -130,7 +152,7 @@ def loop():
 def backtest(symbols):
     horizon_saat = BACKTEST_HORIZON_BARS * 0.25
     for sym in symbols:
-        print("[v4.0] Backtest:", sym, "...")
+        print("[v4.1] Backtest:", sym, "...")
         df15 = md.get_klines(sym, "15", BACKTEST_BARS)
         time.sleep(0.3)
         df60 = md.get_klines(sym, "60", BACKTEST_BARS)
@@ -154,7 +176,7 @@ def backtest(symbols):
         res.to_csv(f"backtest_{sym}.csv", index=False)
 
 
-BOT_SURUM = "v4.0"
+BOT_SURUM = "v4.1"
 
 
 if __name__ == "__main__":
