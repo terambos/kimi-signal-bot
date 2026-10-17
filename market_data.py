@@ -107,7 +107,7 @@ def fetch_all_parallel(symbols: list, tfs: tuple = ("15", "60", "240"),
     ex = ThreadPoolExecutor(max_workers=max_workers)
     futs = {ex.submit(fetch_all, s, tfs, ticker_info): s for s in symbols}
 
-    done, not_done = wait(futs, timeout=60, return_when=FIRST_COMPLETED)
+    done, not_done = wait(futs, timeout=300, return_when=FIRST_COMPLETED)
 
     if not_done:
         print(f"[KRITIK TIMEOUT] {len(not_done)} coin 60 saniyede cekilemedi, atlaniyor.")
