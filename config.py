@@ -57,7 +57,7 @@ ADX_MIN = 20
 
 SCAN_INTERVAL_MIN = 15  # 15 dakikada bir tarar (5 yapmak istersen degistir)
 REQUEST_SLEEP = 0.15
-MAX_WORKERS = 15
+MAX_WORKERS = 10
 
 LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 SIGNAL_LOG = os.path.join(LOG_DIR, "sinyal_log.csv")
