@@ -17,7 +17,7 @@ TIMEFRAME_HTF   = "240"
 SCORE_STRONG = 55
 SCORE_WATCH  = 45
 
-BYBIT_BASE = "https://api.bybit.com"
+BYBIT_BASE = "https://data-api.binance.vision"
 
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT   = 465
