@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Bot durum dosyalari (her tarama degisir, repoya girmez)
+state.json
+logs/
+backtest_*.csv
+
+# Ortam degiskenleri
+.env
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
