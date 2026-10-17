@@ -134,7 +134,7 @@ def fetch_all_parallel(symbols: list, tfs: tuple = ("15", "60", "240"),
         
         try:
             # Toplam bekleme suresi maksimum 90 saniye
-            for fut in as_completed(futs, timeout=90):
+            for fut in as_completed(futs, timeout=60):
                 sym = futs[fut]
                 try:
                     # Her sembol kendi icinde en fazla 30 saniye surer
