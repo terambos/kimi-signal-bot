@@ -20,7 +20,7 @@ def _get(path: str, params: dict) -> dict:
     for attempt in range(3):
         try:
             # Timeout degerlerini dusurduk (Baglanti: 5s, Okuma: 10s)
-            r = SESSION.get(BYBIT_BASE + path, params=params, timeout=(5, 10))
+            r = SESSION.get(BYBIT_BASE + path, params=params, timeout=(3, 5))
             js = r.json()
             if js.get("retCode") == 0:
                 return js
