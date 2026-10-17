@@ -5,13 +5,8 @@ KONFIGURASYON
 import os
 
 # 30 POPULER BYBIT FUTURES COINI
-COINS = [
-    # Mevcut 20'lik listen
-    "ETH", "SOL", "XRP", "SUI", "HYPE", "AVAX", "ARB", "APT", "TIA", "DOGE",
-    "1000PEPE", "WIF", "SEI", "INJ", "NEAR", "BNB", "LINK", "OP", "TAO", "ONDO",
-    # Yeni eklenen 10 coin (Bybit Futures likiditesi yuksek)
-    "ADA", "LTC", "TRX", "ENA", "WLD", "AAVE", "UNI", "XLM", "BCH", "ZEC"
-]
+COINS = ["ETH"]
+SYMBOLS = [c + "USDT" for c in COINS]
 SYMBOLS = [c + "USDT" for c in COINS]
 
 TIMEFRAME_ENTRY = "15"
