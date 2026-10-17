@@ -22,8 +22,12 @@ def _get(path: str, params: dict) -> dict:
             js = r.json()
             if js.get("retCode") == 0:
                 return js
+            
+            # HATA AYIKLAMA: Bybit neden reddettigini ekrana yazdir
+            print(f"[BYBIT REDDETTI] {params.get('symbol', '?')} | Kod: {js.get('retCode')} | Mesaj: {js.get('retMsg')}")
             time.sleep(1.0)
-        except Exception:
+        except Exception as e:
+            print(f"[BAGLANTI HATASI] {params.get('symbol', '?')} | {e}")
             time.sleep(1.0)
     return {"retCode": -1, "result": {}}
 
@@ -107,10 +111,11 @@ def fetch_all_parallel(symbols: list, tfs: tuple = ("15", "60", "240"),
     ex = ThreadPoolExecutor(max_workers=max_workers)
     futs = {ex.submit(fetch_all, s, tfs, ticker_info): s for s in symbols}
 
+    # Sure 300 saniyeye cikarildi
     done, not_done = wait(futs, timeout=300, return_when=FIRST_COMPLETED)
 
     if not_done:
-        print(f"[KRITIK TIMEOUT] {len(not_done)} coin 60 saniyede cekilemedi, atlaniyor.")
+        print(f"[KRITIK TIMEOUT] {len(not_done)} coin 300 saniyede cekilemedi, atlaniyor.")
 
     for fut in done:
         sym = futs[fut]
