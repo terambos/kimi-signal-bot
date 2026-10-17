@@ -53,7 +53,7 @@ ADX_MIN = 20             # ADX bunun altindaysa sinyal yok (zorunlu)
 
 SCAN_INTERVAL_MIN = 15
 REQUEST_SLEEP = 0.15
-MAX_WORKERS = 8
+MAX_WORKERS = 15
 
 LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 SIGNAL_LOG = os.path.join(LOG_DIR, "sinyal_log.csv")
