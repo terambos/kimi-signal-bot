@@ -63,7 +63,9 @@ def _funding_label(f: float) -> str:
 def send_signal_mail(sig: dict, news_ctx: list) -> None:
     if not MAIL_ON_STRONG:
         return
-    subject = "SINYAL %s %s | Skor %d | Giris %s" % (
+    
+    # BASLIK DEGISTI: Basina [KIMI] eklendi
+    subject = "[KIMI] SINYAL %s %s | Skor %d | Giris %s" % (
         sig["direction"], sig["symbol"], sig["score"], sig["price"])
 
     news_html = ""
@@ -71,14 +73,12 @@ def send_signal_mail(sig: dict, news_ctx: list) -> None:
         items = "".join("<li>%s</li>" % n for n in news_ctx[:5])
         news_html = "<h4>Baglam (haber akisi):</h4><ul>%s</ul>" % items
 
-    # S/R referans blogu
     entry_zone = sig.get("entry_zone")
     if entry_zone and abs(entry_zone - sig["price"]) / sig["price"] > 0.0005:
         sr_row = '<tr><td>Referans giris bolgesi (S/R)</td><td><b>%s</b></td></tr>' % entry_zone
     else:
         sr_row = '<tr><td>Referans giris bolgesi (S/R)</td><td>yakin S/R yok</td></tr>'
 
-    # TP metinleri (config'ten okunur)
     tp1_text = "min %%%s hedefi" % round(TP1_MIN_PCT * 100, 1)
     tp2_text = "min %%%s hedefi" % round(TP2_MIN_PCT * 100, 1)
 
@@ -124,10 +124,10 @@ def send_signal_mail(sig: dict, news_ctx: list) -> None:
 
 def send_digest_mail(rows: list, news: list) -> None:
     if not rows:
-        subject = "Saatlik Ozet: Guclu sinyal yok"
+        subject = "[KIMI] Saatlik Ozet: Guclu sinyal yok"
         body = "<html><body><p>Son taramada skor %d uzeri sinyal yok. Piyasa sakin.</p></body></html>" % SCORE_STRONG
     else:
-        subject = "Saatlik Ozet: %d guclu sinyal" % len(rows)
+        subject = "[KIMI] Saatlik Ozet: %d guclu sinyal" % len(rows)
         trs = "".join(
             "<tr><td>%s</td><td>%s</td><td>%d</td><td>%s</td><td>%s</td><td>%s</td></tr>" % (
                 r["direction"], r["symbol"], r["score"], r["price"], r["tp1"], r["tp2"])
