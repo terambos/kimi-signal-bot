@@ -5,7 +5,7 @@ Kline + Funding + Open Interest ucretsiz public endpoint'lerden alinir.
 Paralel sembol cekimi icin ThreadPoolExecutor kullanilir.
 """
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 
 import requests
 import pandas as pd
@@ -13,14 +13,17 @@ import pandas as pd
 from config import BYBIT_BASE, REQUEST_SLEEP, MAX_WORKERS
 
 SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": "kripto-sinyal-botu/1.0"})
+# Tarayici gibi gorun (bazi IP engellerini asar)
+SESSION.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+})
 
 
 def _get(path: str, params: dict) -> dict:
     for attempt in range(3):
         try:
-            # Timeout degerlerini dusurduk (Baglanti: 5s, Okuma: 10s)
-            r = SESSION.get(BYBIT_BASE + path, params=params, timeout=(3, 5))
+            # Timeout: baglanti 5s, okuma 8s. Daha hizli pes eder.
+            r = SESSION.get(BYBIT_BASE + path, params=params, timeout=(5, 8))
             js = r.json()
             if js.get("retCode") == 0:
                 return js
@@ -38,7 +41,7 @@ def get_klines(symbol: str, interval: str, limit: int = 200) -> pd.DataFrame:
     rows = []
     end = None
     remaining = limit
-    failsafe = 0  # Sonsuz dongu korumasi
+    failsafe = 0
 
     while remaining > 0 and failsafe < 3:
         failsafe += 1
@@ -69,7 +72,6 @@ def get_klines(symbol: str, interval: str, limit: int = 200) -> pd.DataFrame:
 
 
 def get_open_interest(symbol: str, interval: str = "15", limit: int = 30) -> pd.DataFrame:
-    """Bybit v5 open-interest endpoint'i."""
     js = _get("/v5/market/open-interest", {
         "category": "linear", "symbol": symbol,
         "intervalTime": interval, "limit": limit,
@@ -104,19 +106,15 @@ def sleep_between():
 
 def fetch_all(symbol: str, tfs: tuple = ("15", "60", "240"),
               ticker_info: dict | None = None) -> dict:
-    """Tek sembol icin tum zaman dilimleri + funding + OI cek."""
     out = {"symbol": symbol}
     for tf in tfs:
         out[f"df_{tf}"] = get_klines(symbol, tf, limit=200)
         sleep_between()
-    
     if ticker_info is not None:
         out.update(ticker_info.get(symbol, {}))
     else:
         out.update(get_ticker(symbol))
     sleep_between()
-    
-    # OI: 15dk periyotta son 30 nokta
     out["oi_df"] = get_open_interest(symbol, interval="15", limit=30)
     return out
 
@@ -126,31 +124,33 @@ def fetch_all_parallel(symbols: list, tfs: tuple = ("15", "60", "240"),
                        max_workers: int = MAX_WORKERS) -> dict:
     """
     Sembolleri paralel cek.
-    Global Timeout: Eger tum islem 90 saniyeyi gecerse, kalanlari atlar ve devam eder.
+    GitHub Actions'in sonsuza kadar beklemesini engellemek icin
+    maksimum 60 saniye calisir, sonra zorla kapatir.
     """
     results = {}
-    with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        futs = {ex.submit(fetch_all, s, tfs, ticker_info): s for s in symbols}
-        
-        try:
-            # Toplam bekleme suresi maksimum 90 saniye
-            for fut in as_completed(futs, timeout=60):
-                sym = futs[fut]
-                try:
-                    # Her sembol kendi icinde en fazla 30 saniye surer
-                    results[sym] = fut.result(timeout=30)
-                except TimeoutError:
-                    print(f"[TIMEOUT] {sym} verisi 30 saniyede cekilemedi, atlandi.")
-                    results[sym] = None
-                except Exception as e:
-                    print(f"[VERI HATASI] {sym}: {e}")
-                    results[sym] = None
-        except TimeoutError:
-            print("[KRITIK TIMEOUT] Tarama 90 saniyeyi gecti! Kalan coinler atlaniyor.")
+    ex = ThreadPoolExecutor(max_workers=max_workers)
+    futs = {ex.submit(fetch_all, s, tfs, ticker_info): s for s in symbols}
 
-    # Cekilemeyenler icin None ata
+    done, not_done = wait(futs, timeout=60, return_when=FIRST_COMPLETED)
+
+    if not_done:
+        print(f"[KRITIK TIMEOUT] {len(not_done)} coin 60 saniyede cekilemedi, atlaniyor.")
+
+    for fut in done:
+        sym = futs[fut]
+        try:
+            results[sym] = fut.result(timeout=1)
+        except Exception as e:
+            print(f"[VERI HATASI] {sym}: {e}")
+            results[sym] = None
+
+    for fut in not_done:
+        fut.cancel()
+
+    # Arka planda kalan islemleri bekletmeden kapat
+    ex.shutdown(wait=False, cancel_futures=True)
+
     for s in symbols:
         if s not in results:
             results[s] = None
-            
     return results
