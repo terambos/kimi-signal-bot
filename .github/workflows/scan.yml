@@ -1,7 +1,7 @@
 name: kimi-tarama
 
 on:
-  workflow_dispatch:   # Tetikleme cron-job.org'dan gelir
+  workflow_dispatch:
 
 jobs:
   tara:
