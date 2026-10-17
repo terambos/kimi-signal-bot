@@ -28,13 +28,13 @@ GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
 MAIL_ON_STRONG = True
 HOURLY_DIGEST  = True
 
-# --- STOP ve TP (FIYAT yuzdesi) ---
-STOP_PCT     = 0.05      # fiyatta %5 stop
-TP1_MIN_PCT  = 0.03      # dinamik TP min %3 (eskiden 0.05)
-TP2_MIN_PCT  = 0.06      # dinamik TP min %6 (eskiden 0.07)
-TP1_FALLBACK_PCT = 0.05  # S/R yoksa fallback %5
-TP2_FALLBACK_PCT = 0.07  # S/R yoksa fallback %7
-MIN_TP_DISTANCE_PCT = 0.03   # TP en az %3 uzakta olmali
+# --- STOP ve TP ---
+STOP_PCT     = 0.05
+TP1_MIN_PCT  = 0.03
+TP2_MIN_PCT  = 0.06
+TP1_FALLBACK_PCT = 0.05
+TP2_FALLBACK_PCT = 0.07
+MIN_TP_DISTANCE_PCT = 0.03
 
 ATR_TP1_MULT = 0.1
 ATR_TP2_MULT = 0.1
@@ -49,19 +49,18 @@ ANOMALY_LOOKBACK = 3
 ANOMALY_ATR_MULT = 2.5
 FUNDING_BLOCK = 0.00075
 QQE_FRESH_BARS = 6
-ADX_MIN = 20             # ADX bunun altindaysa sinyal yok (zorunlu)
+ADX_MIN = 20
 
 SCAN_INTERVAL_MIN = 15
 REQUEST_SLEEP = 0.15
-MAX_WORKERS = 15
+MAX_WORKERS = 15         # <-- 8'den 15'e cikarildi (daha hizli)
 
 LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 SIGNAL_LOG = os.path.join(LOG_DIR, "sinyal_log.csv")
 TRADE_LOG  = os.path.join(LOG_DIR, "trade_gunlugu.csv")
 
-# state.json (cooldown icin)
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state.json")
-SYMBOL_COOLDOWN_MIN = 240    # 4 saat
+SYMBOL_COOLDOWN_MIN = 240
 
 NEWS_ENABLED = True
 NEWS_RSS = [
