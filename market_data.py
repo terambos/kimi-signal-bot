@@ -4,6 +4,7 @@ Yahoo Finance veri katmani.
 API key GEREKMEZ, IP engeli YOKTUR.
 """
 import time
+import random
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 import pandas as pd
 import yfinance as yf
@@ -12,22 +13,32 @@ from config import REQUEST_SLEEP, MAX_WORKERS
 
 # Yahoo sembol eslestirmeleri (Bybit sembolleri -> Yahoo sembolleri)
 YF_TICKER_OVERRIDES = {
-    "1000PEPE": "PEPE-USD", "HYPE": "HYPE32196-USD",
-    "APT": "APT21794-USD", "TAO": "TAO22974-USD",
+    "1000PEPE": "PEPE24478-USD", # Dogru PEPE adresi
+    "HYPE": "HYPE32196-USD",
+    "APT": "APT21794-USD", 
+    "TAO": "TAO22974-USD",
     "SUI": "SUI20947-USD"
 }
 
 def get_klines(symbol: str, interval: str, limit: int = 200) -> pd.DataFrame:
-    # ETHUSDT -> ETH
     base = symbol.replace("USDT", "")
     ticker_symbol = YF_TICKER_OVERRIDES.get(base, base + "-USD")
     
     tf_map = {"15": "15m", "60": "1h", "240": "4h"}
     yf_interval = tf_map.get(interval, "15m")
     
-    period = "60d" if yf_interval == "15m" else "730d"
+    # Yahoo'nun limitleri
+    if yf_interval == "15m":
+        period = "60d"
+    elif yf_interval == "1h":
+        period = "730d"
+    else:
+        period = "730d"
     
     try:
+        # Yahoo'nun rate limitine takilmamak icin rastgele bekleme
+        time.sleep(random.uniform(0.5, 1.5))
+        
         ticker = yf.Ticker(ticker_symbol)
         df = ticker.history(period=period, interval=yf_interval)
         if df.empty:
@@ -38,7 +49,6 @@ def get_klines(symbol: str, interval: str, limit: int = 200) -> pd.DataFrame:
             "Low": "low", "Close": "close", "Volume": "volume"
         })
         
-        # Yerel saati UTC'ye cevir
         if df.index.tz is None:
             df.index = df.index.tz_localize('UTC')
         else:
@@ -47,7 +57,7 @@ def get_klines(symbol: str, interval: str, limit: int = 200) -> pd.DataFrame:
         df.index.name = "start"
         return df[["open", "high", "low", "close", "volume"]].tail(limit)
     except Exception as e:
-        print(f"[VERI HATASI] {symbol}: {e}")
+        print(f"[VERI HATASI] {symbol} ({yf_interval}): {e}")
         return pd.DataFrame()
 
 
@@ -73,14 +83,14 @@ def fetch_all(symbol: str, tfs: tuple = ("15", "60", "240"),
     out = {"symbol": symbol}
     for tf in tfs:
         out[f"df_{tf}"] = get_klines(symbol, tf, limit=200)
-        time.sleep(REQUEST_SLEEP)
+        time.sleep(0.2) # Kisa mola
     
     if ticker_info is not None:
         out.update(ticker_info.get(symbol, {}))
     else:
         out.update(get_ticker(symbol))
         
-    time.sleep(REQUEST_SLEEP)
+    time.sleep(0.2)
     out["oi_df"] = None
     return out
 
@@ -89,13 +99,15 @@ def fetch_all_parallel(symbols: list, tfs: tuple = ("15", "60", "240"),
                        ticker_info: dict | None = None,
                        max_workers: int = MAX_WORKERS) -> dict:
     results = {}
-    ex = ThreadPoolExecutor(max_workers=max_workers)
+    # Yahoo'yi bogmamak icin ayni anda maksimum 5 istek atiyoruz
+    ex = ThreadPoolExecutor(max_workers=5) 
     futs = {ex.submit(fetch_all, s, tfs, ticker_info): s for s in symbols}
 
-    done, not_done = wait(futs, timeout=90, return_when=FIRST_COMPLETED)
+    # Islem suresi 120 saniyeye cikarildi (Yahoo yavaslatiyor)
+    done, not_done = wait(futs, timeout=120, return_when=FIRST_COMPLETED)
 
     if not_done:
-        print(f"[KRITIK TIMEOUT] {len(not_done)} coin 90 saniyede cekilemedi, atlaniyor.")
+        print(f"[KRITIK TIMEOUT] {len(not_done)} coin 120 saniyede cekilemedi, atlaniyor.")
 
     for fut in done:
         sym = futs[fut]
