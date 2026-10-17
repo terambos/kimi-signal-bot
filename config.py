@@ -17,8 +17,8 @@ TIMEFRAME_HTF   = "240"
 SCORE_STRONG = 55
 SCORE_WATCH  = 45
 
-# Binance Public API (GitHub Actions engellemez, proxy gerekmez)
-BYBIT_BASE = "https://data-api.binance.vision"
+# Yahoo Finance kullanildigi icin proxy/base URL gerekmez
+BYBIT_BASE = "" 
 
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT   = 465
@@ -54,7 +54,7 @@ ADX_MIN = 20
 
 SCAN_INTERVAL_MIN = 15
 REQUEST_SLEEP = 0.1
-MAX_WORKERS = 15
+MAX_WORKERS = 10
 
 LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 SIGNAL_LOG = os.path.join(LOG_DIR, "sinyal_log.csv")
