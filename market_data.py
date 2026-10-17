@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-Bybit PUBLIC veri katmani - API key GEREKMEZ.
-Kline + Funding + Open Interest ucretsiz public endpoint'lerden alinir.
-Paralel sembol cekimi icin ThreadPoolExecutor kullanilir.
+Binance PUBLIC veri katmani - API key GEREKMEZ.
+Kline Binance aynasindan (data-api.binance.vision) cekilir.
+GitHub Actions IP engeli yoktur, proxy gerekmez.
 """
 import time
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
@@ -13,90 +13,58 @@ import pandas as pd
 from config import BYBIT_BASE, REQUEST_SLEEP, MAX_WORKERS
 
 SESSION = requests.Session()
-# Tarayici gibi gorun (bazi IP engellerini asar)
 SESSION.headers.update({
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 })
 
 
-def _get(path: str, params: dict) -> dict:
+def _get(path: str, params: dict):
     for attempt in range(3):
         try:
-            # Timeout: baglanti 5s, okuma 8s. Daha hizli pes eder.
             r = SESSION.get(BYBIT_BASE + path, params=params, timeout=(5, 8))
-            js = r.json()
-            if js.get("retCode") == 0:
-                return js
-            rc = js.get("retCode")
-            if rc in (10006, 10018):
-                time.sleep(3.0 * (attempt + 1))
-            else:
-                time.sleep(1.0 * (attempt + 1))
+            if r.status_code == 200:
+                return r.json()
+            time.sleep(1.0 * (attempt + 1))
         except Exception:
             time.sleep(1.0 * (attempt + 1))
-    return {"retCode": -1, "result": {}}
+    return []
 
 
 def get_klines(symbol: str, interval: str, limit: int = 200) -> pd.DataFrame:
-    rows = []
-    end = None
-    remaining = limit
-    failsafe = 0
+    tf_map = {"15": "15m", "60": "1h", "240": "4h"}
+    bnb_tf = tf_map.get(interval, interval)
 
-    while remaining > 0 and failsafe < 3:
-        failsafe += 1
-        params = {"category": "linear", "symbol": symbol,
-                  "interval": interval, "limit": min(remaining, 1000)}
-        if end is not None:
-            params["end"] = end
-        js = _get("/v5/market/kline", params)
-        lst = js.get("result", {}).get("list", [])
-        if not lst:
-            break
-        rows.extend(lst)
-        remaining -= len(lst)
-        oldest = int(lst[-1][0])
-        end = oldest - 1
-        if len(lst) < min(remaining + len(lst), 1000):
-            break
-        time.sleep(REQUEST_SLEEP)
-    if not rows:
+    # Binance'in 1000 limiti var, biz 200 cekiyoruz
+    js = _get("/api/v3/klines", {
+        "symbol": symbol, "interval": bnb_tf, "limit": min(limit, 1000)
+    })
+    lst = js if isinstance(js, list) else []
+    if not lst:
         return pd.DataFrame()
-    df = pd.DataFrame(rows, columns=["start", "open", "high", "low", "close",
-                                     "volume", "turnover"]).drop_duplicates(subset="start")
+
+    df = pd.DataFrame(lst, columns=["start", "open", "high", "low", "close",
+                                     "volume", "close_time", "qav", "trades",
+                                     "tbb", "tbq", "ignore"])
     df["start"] = pd.to_datetime(df["start"].astype("int64"), unit="ms", utc=True)
-    for c in ["open", "high", "low", "close", "volume", "turnover"]:
+    for c in ["open", "high", "low", "close", "volume"]:
         df[c] = df[c].astype(float)
-    df = df.sort_values("start").set_index("start")
-    return df
+    return df.sort_values("start").set_index("start")[["open", "high", "low", "close", "volume"]]
 
 
 def get_open_interest(symbol: str, interval: str = "15", limit: int = 30) -> pd.DataFrame:
-    js = _get("/v5/market/open-interest", {
-        "category": "linear", "symbol": symbol,
-        "intervalTime": interval, "limit": limit,
-    })
-    lst = js.get("result", {}).get("list", [])
-    if not lst:
-        return pd.DataFrame()
-    df = pd.DataFrame(lst)
-    df["timestamp"] = pd.to_datetime(df["timestamp"].astype("int64"), unit="ms", utc=True)
-    df["openInterest"] = df["openInterest"].astype(float)
-    df = df.sort_values("timestamp").set_index("timestamp")
-    return df[["openInterest"]]
+    # Binance OI su an devre disi (baska endpoint gerekir)
+    return pd.DataFrame()
 
 
 def get_ticker(symbol: str) -> dict:
-    js = _get("/v5/market/tickers", {"category": "linear", "symbol": symbol})
-    lst = js.get("result", {}).get("list", [])
-    if not lst:
+    js = _get("/api/v3/ticker/24hr", {"symbol": symbol})
+    if not isinstance(js, dict):
         return {}
-    t = lst[0]
     return {
-        "funding": float(t.get("fundingRate", 0) or 0),
-        "mark": float(t.get("markPrice", 0) or 0),
-        "oi_now": float(t.get("openInterest", 0) or 0),
-        "turnover24h": float(t.get("turnover24h", 0) or 0),
+        "funding": 0.0,   # Binance spot funding yok
+        "mark": float(js.get("lastPrice", 0) or 0),
+        "oi_now": 0.0,
+        "turnover24h": float(js.get("quoteVolume", 0) or 0),
     }
 
 
@@ -115,18 +83,13 @@ def fetch_all(symbol: str, tfs: tuple = ("15", "60", "240"),
     else:
         out.update(get_ticker(symbol))
     sleep_between()
-    out["oi_df"] = get_open_interest(symbol, interval="15", limit=30)
+    out["oi_df"] = None
     return out
 
 
 def fetch_all_parallel(symbols: list, tfs: tuple = ("15", "60", "240"),
                        ticker_info: dict | None = None,
                        max_workers: int = MAX_WORKERS) -> dict:
-    """
-    Sembolleri paralel cek.
-    GitHub Actions'in sonsuza kadar beklemesini engellemek icin
-    maksimum 60 saniye calisir, sonra zorla kapatir.
-    """
     results = {}
     ex = ThreadPoolExecutor(max_workers=max_workers)
     futs = {ex.submit(fetch_all, s, tfs, ticker_info): s for s in symbols}
@@ -147,7 +110,6 @@ def fetch_all_parallel(symbols: list, tfs: tuple = ("15", "60", "240"),
     for fut in not_done:
         fut.cancel()
 
-    # Arka planda kalan islemleri bekletmeden kapat
     ex.shutdown(wait=False, cancel_futures=True)
 
     for s in symbols:
