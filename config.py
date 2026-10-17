@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""
-KONFIGURASYON
-"""
 import os
 
-# 30 POPULER BYBIT FUTURES COINI
-COINS = ["ETH"]
-SYMBOLS = [c + "USDT" for c in COINS]
+# 30 POPULER COIN
+COINS = [
+    "ETH", "SOL", "XRP", "SUI", "HYPE", "AVAX", "ARB", "APT", "TIA", "DOGE",
+    "1000PEPE", "WIF", "SEI", "INJ", "NEAR", "BNB", "LINK", "OP", "TAO", "ONDO",
+    "ADA", "LTC", "TRX", "ENA", "WLD", "AAVE", "UNI", "XLM", "BCH", "ZEC"
+]
 SYMBOLS = [c + "USDT" for c in COINS]
 
 TIMEFRAME_ENTRY = "15"
@@ -16,8 +16,8 @@ TIMEFRAME_HTF   = "240"
 SCORE_STRONG = 55
 SCORE_WATCH  = 45
 
-# Dogrudan Bybit API (Yerelde calisirken proxy gerekmez)
-BYBIT_BASE = "https://api.bybit.com"
+# Binance Public API (GitHub IP engeli yoktur)
+BYBIT_BASE = "https://data-api.binance.vision"
 
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT   = 465
@@ -50,8 +50,8 @@ FUNDING_BLOCK = 0.00075
 QQE_FRESH_BARS = 6
 ADX_MIN = 20
 
-SCAN_INTERVAL_MIN = 15  # 15 dakikada bir tarar (5 yapmak istersen degistir)
-REQUEST_SLEEP = 0.15
+SCAN_INTERVAL_MIN = 15
+REQUEST_SLEEP = 0.1
 MAX_WORKERS = 10
 
 LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
