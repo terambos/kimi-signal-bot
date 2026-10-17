@@ -1,75 +1,71 @@
 # -*- coding: utf-8 -*-
 """
-Binance PUBLIC veri katmani - API key GEREKMEZ.
-Kline Binance aynasindan (data-api.binance.vision) cekilir.
-GitHub Actions IP engeli yoktur, proxy gerekmez.
+Yahoo Finance veri katmani.
+API key GEREKMEZ, IP engeli YOKTUR.
 """
 import time
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
-
-import requests
 import pandas as pd
+import yfinance as yf
 
-from config import BYBIT_BASE, REQUEST_SLEEP, MAX_WORKERS
+from config import REQUEST_SLEEP, MAX_WORKERS
 
-SESSION = requests.Session()
-SESSION.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-})
-
-
-def _get(path: str, params: dict):
-    for attempt in range(3):
-        try:
-            r = SESSION.get(BYBIT_BASE + path, params=params, timeout=(5, 8))
-            if r.status_code == 200:
-                return r.json()
-            time.sleep(1.0 * (attempt + 1))
-        except Exception:
-            time.sleep(1.0 * (attempt + 1))
-    return []
-
+# Yahoo sembol eslestirmeleri (Bybit sembolleri -> Yahoo sembolleri)
+YF_TICKER_OVERRIDES = {
+    "1000PEPE": "PEPE-USD", "HYPE": "HYPE32196-USD",
+    "APT": "APT21794-USD", "TAO": "TAO22974-USD",
+    "SUI": "SUI20947-USD"
+}
 
 def get_klines(symbol: str, interval: str, limit: int = 200) -> pd.DataFrame:
+    # ETHUSDT -> ETH
+    base = symbol.replace("USDT", "")
+    ticker_symbol = YF_TICKER_OVERRIDES.get(base, base + "-USD")
+    
     tf_map = {"15": "15m", "60": "1h", "240": "4h"}
-    bnb_tf = tf_map.get(interval, interval)
-
-    # Binance'in 1000 limiti var, biz 200 cekiyoruz
-    js = _get("/api/v3/klines", {
-        "symbol": symbol, "interval": bnb_tf, "limit": min(limit, 1000)
-    })
-    lst = js if isinstance(js, list) else []
-    if not lst:
+    yf_interval = tf_map.get(interval, "15m")
+    
+    period = "60d" if yf_interval == "15m" else "730d"
+    
+    try:
+        ticker = yf.Ticker(ticker_symbol)
+        df = ticker.history(period=period, interval=yf_interval)
+        if df.empty:
+            return pd.DataFrame()
+        
+        df = df.rename(columns={
+            "Open": "open", "High": "high", 
+            "Low": "low", "Close": "close", "Volume": "volume"
+        })
+        
+        # Yerel saati UTC'ye cevir
+        if df.index.tz is None:
+            df.index = df.index.tz_localize('UTC')
+        else:
+            df.index = df.index.tz_convert('UTC')
+            
+        df.index.name = "start"
+        return df[["open", "high", "low", "close", "volume"]].tail(limit)
+    except Exception as e:
+        print(f"[VERI HATASI] {symbol}: {e}")
         return pd.DataFrame()
 
-    df = pd.DataFrame(lst, columns=["start", "open", "high", "low", "close",
-                                     "volume", "close_time", "qav", "trades",
-                                     "tbb", "tbq", "ignore"])
-    df["start"] = pd.to_datetime(df["start"].astype("int64"), unit="ms", utc=True)
-    for c in ["open", "high", "low", "close", "volume"]:
-        df[c] = df[c].astype(float)
-    return df.sort_values("start").set_index("start")[["open", "high", "low", "close", "volume"]]
 
-
-def get_open_interest(symbol: str, interval: str = "15", limit: int = 30) -> pd.DataFrame:
-    # Binance OI su an devre disi (baska endpoint gerekir)
+def get_open_interest(symbol: str) -> pd.DataFrame:
     return pd.DataFrame()
 
 
 def get_ticker(symbol: str) -> dict:
-    js = _get("/api/v3/ticker/24hr", {"symbol": symbol})
-    if not isinstance(js, dict):
-        return {}
-    return {
-        "funding": 0.0,   # Binance spot funding yok
-        "mark": float(js.get("lastPrice", 0) or 0),
-        "oi_now": 0.0,
-        "turnover24h": float(js.get("quoteVolume", 0) or 0),
-    }
-
-
-def sleep_between():
-    time.sleep(REQUEST_SLEEP)
+    base = symbol.replace("USDT", "")
+    ticker_symbol = YF_TICKER_OVERRIDES.get(base, base + "-USD")
+    try:
+        t = yf.Ticker(ticker_symbol)
+        df = t.history(period="1d")
+        if not df.empty:
+            return {"funding": 0.0, "mark": float(df["Close"].iloc[-1]), "oi_now": 0.0, "turnover24h": 0.0}
+    except Exception:
+        pass
+    return {}
 
 
 def fetch_all(symbol: str, tfs: tuple = ("15", "60", "240"),
@@ -77,12 +73,14 @@ def fetch_all(symbol: str, tfs: tuple = ("15", "60", "240"),
     out = {"symbol": symbol}
     for tf in tfs:
         out[f"df_{tf}"] = get_klines(symbol, tf, limit=200)
-        sleep_between()
+        time.sleep(REQUEST_SLEEP)
+    
     if ticker_info is not None:
         out.update(ticker_info.get(symbol, {}))
     else:
         out.update(get_ticker(symbol))
-    sleep_between()
+        
+    time.sleep(REQUEST_SLEEP)
     out["oi_df"] = None
     return out
 
@@ -94,10 +92,10 @@ def fetch_all_parallel(symbols: list, tfs: tuple = ("15", "60", "240"),
     ex = ThreadPoolExecutor(max_workers=max_workers)
     futs = {ex.submit(fetch_all, s, tfs, ticker_info): s for s in symbols}
 
-    done, not_done = wait(futs, timeout=60, return_when=FIRST_COMPLETED)
+    done, not_done = wait(futs, timeout=90, return_when=FIRST_COMPLETED)
 
     if not_done:
-        print(f"[KRITIK TIMEOUT] {len(not_done)} coin 60 saniyede cekilemedi, atlaniyor.")
+        print(f"[KRITIK TIMEOUT] {len(not_done)} coin 90 saniyede cekilemedi, atlaniyor.")
 
     for fut in done:
         sym = futs[fut]
