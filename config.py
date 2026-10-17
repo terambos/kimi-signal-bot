@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
-"""
-KONFIGURASYON
-"""
 import os
 
-COINS = ["ETH", "SOL", "XRP", "SUI", "HYPE",
-         "AVAX", "ARB", "APT", "TIA", "DOGE",
-         "1000PEPE", "WIF", "SEI", "INJ", "NEAR",
-         "BNB", "LINK", "OP", "TAO", "ONDO"]
+# 35 POPULER COIN
+COINS = [
+    "ETH", "SOL", "XRP", "SUI", "HYPE", "AVAX", "ARB", "APT", "TIA", "DOGE",
+    "1000PEPE", "WIF", "SEI", "INJ", "NEAR", "BNB", "LINK", "OP", "TAO", "ONDO",
+    "ADA", "DOT", "LTC", "TRX", "ATOM", "FIL", "UNI", "AAVE", "RNDR", "FET",
+    "IMX", "STX", "GRT", "SAND", "MATIC"
+]
 SYMBOLS = [c + "USDT" for c in COINS]
 
 TIMEFRAME_ENTRY = "15"
@@ -17,7 +17,6 @@ TIMEFRAME_HTF   = "240"
 SCORE_STRONG = 55
 SCORE_WATCH  = 45
 
-# Yahoo Finance kullanildigi icin proxy/base URL gerekmez
 BYBIT_BASE = "" 
 
 SMTP_SERVER = "smtp.gmail.com"
@@ -29,7 +28,6 @@ GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
 MAIL_ON_STRONG = True
 HOURLY_DIGEST  = True
 
-# --- STOP ve TP ---
 STOP_PCT     = 0.05
 TP1_MIN_PCT  = 0.03
 TP2_MIN_PCT  = 0.06
@@ -53,8 +51,8 @@ QQE_FRESH_BARS = 6
 ADX_MIN = 20
 
 SCAN_INTERVAL_MIN = 15
-REQUEST_SLEEP = 0.1
-MAX_WORKERS = 10
+REQUEST_SLEEP = 0.5
+MAX_WORKERS = 3 # Ayni anda 3 istek (Yahoo'yu kizdirmamak icin)
 
 LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 SIGNAL_LOG = os.path.join(LOG_DIR, "sinyal_log.csv")
