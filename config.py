@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
+"""
+KONFIGURASYON
+"""
 import os
 
-# 35 POPULER COIN
-COINS = [
-    "ETH", "SOL", "XRP", "SUI", "HYPE", "AVAX", "ARB", "APT", "TIA", "DOGE",
-    "1000PEPE", "WIF", "SEI", "INJ", "NEAR", "BNB", "LINK", "OP", "TAO", "ONDO",
-    "ADA", "DOT", "LTC", "TRX", "ATOM", "FIL", "UNI", "AAVE", "RNDR", "FET",
-    "IMX", "STX", "GRT", "SAND", "MATIC"
-]
+COINS = ["ETH", "SOL", "XRP", "SUI", "HYPE",
+         "AVAX", "ARB", "APT", "TIA", "DOGE",
+         "1000PEPE", "WIF", "SEI", "INJ", "NEAR",
+         "BNB", "LINK", "OP", "TAO", "ONDO"]
 SYMBOLS = [c + "USDT" for c in COINS]
 
 TIMEFRAME_ENTRY = "15"
@@ -17,7 +17,8 @@ TIMEFRAME_HTF   = "240"
 SCORE_STRONG = 55
 SCORE_WATCH  = 45
 
-BYBIT_BASE = "" 
+# Dogrudan Bybit API (Yerelde calisirken proxy gerekmez)
+BYBIT_BASE = "https://api.bybit.com"
 
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT   = 465
@@ -50,9 +51,9 @@ FUNDING_BLOCK = 0.00075
 QQE_FRESH_BARS = 6
 ADX_MIN = 20
 
-SCAN_INTERVAL_MIN = 15
-REQUEST_SLEEP = 0.5
-MAX_WORKERS = 3 # Ayni anda 3 istek (Yahoo'yu kizdirmamak icin)
+SCAN_INTERVAL_MIN = 15  # 15 dakikada bir tarar (5 yapmak istersen degistir)
+REQUEST_SLEEP = 0.15
+MAX_WORKERS = 15
 
 LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 SIGNAL_LOG = os.path.join(LOG_DIR, "sinyal_log.csv")
