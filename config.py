@@ -1,11 +1,17 @@
 # -*- coding: utf-8 -*-
+"""
+KONFIGURASYON
+"""
 import os
 
-# 30 POPULER COIN
+# 40 POPULER BYBIT FUTURES COINI
 COINS = [
+    # Mevcut 30'lik listen
     "ETH", "SOL", "XRP", "SUI", "HYPE", "AVAX", "ARB", "APT", "TIA", "DOGE",
     "1000PEPE", "WIF", "SEI", "INJ", "NEAR", "BNB", "LINK", "OP", "TAO", "ONDO",
-    "ADA", "LTC", "TRX", "ENA", "WLD", "AAVE", "UNI", "XLM", "BCH", "ZEC"
+    "ADA", "LTC", "TRX", "ENA", "WLD", "AAVE", "UNI", "XLM", "BCH", "ZEC",
+    # Yeni eklenen 10 hareketli coin
+    "PENDLE", "JUP", "STRK", "MANTA", "AEVO", "ALT", "BLUR", "EDU", "ARKM", "CFX"
 ]
 SYMBOLS = [c + "USDT" for c in COINS]
 
@@ -16,8 +22,8 @@ TIMEFRAME_HTF   = "240"
 SCORE_STRONG = 55
 SCORE_WATCH  = 45
 
-# Binance Public API (GitHub IP engeli yoktur)
-BYBIT_BASE = "https://data-api.binance.vision"
+# Dogrudan Bybit API (Yerelde ve VPS'te calisirken proxy gerekmez)
+BYBIT_BASE = "https://api.bybit.com"
 
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT   = 465
@@ -50,9 +56,9 @@ FUNDING_BLOCK = 0.00075
 QQE_FRESH_BARS = 6
 ADX_MIN = 20
 
-SCAN_INTERVAL_MIN = 15
-REQUEST_SLEEP = 0.1
-MAX_WORKERS = 10
+SCAN_INTERVAL_MIN = 15  # 15 dakikada bir tarar
+REQUEST_SLEEP = 0.2     # İstekler arası bekleme (Bybit'in kızmaması için)
+MAX_WORKERS = 10        # Aynı anda 10 istek (40 coin için güvenli sınır)
 
 LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 SIGNAL_LOG = os.path.join(LOG_DIR, "sinyal_log.csv")
