@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-ANA CALISTIRICI v4.1
+ANA CALISTIRICI v4.2
   python scanner.py --once
   python scanner.py
   python scanner.py --backtest
@@ -45,7 +45,6 @@ def _recent_signal(state: dict, symbol: str) -> bool:
     if not last:
         return False
     try:
-        # ISO 8601 formatli zaman
         last_dt = pd.Timestamp(last)
         if last_dt.tzinfo is None:
             last_dt = last_dt.tz_localize("UTC")
@@ -94,14 +93,16 @@ def run_scan(verbose=True, explain=False) -> list:
             continue
 
         if sig["score"] >= SCORE_STRONG:
+            # Cooldown kontrolu
             if _recent_signal(state, sym):
                 if verbose:
                     print("%-11s skor=%d %s (cooldown 4h)" % (sym, sig["score"], sig["direction"]))
                 continue
+                
             ctx = news.context_for(sym) if NEWS_ENABLED else []
             notify.send_signal_mail(sig, ctx)
             notify.log_signal(sig)
-            state[sym] = datetime.now(timezone.utc).isoformat()
+            state[sym] = datetime.now(timezone.utc).isoformat() # Zamani kaydet
             strong.append(sig)
             if verbose:
                 print("%-11s SINYAL skor=%d %s" % (sym, sig["score"], sig["direction"]))
@@ -152,7 +153,7 @@ def loop():
 def backtest(symbols):
     horizon_saat = BACKTEST_HORIZON_BARS * 0.25
     for sym in symbols:
-        print("[v4.1] Backtest:", sym, "...")
+        print("[v4.2] Backtest:", sym, "...")
         df15 = md.get_klines(sym, "15", BACKTEST_BARS)
         time.sleep(0.3)
         df60 = md.get_klines(sym, "60", BACKTEST_BARS)
@@ -176,7 +177,7 @@ def backtest(symbols):
         res.to_csv(f"backtest_{sym}.csv", index=False)
 
 
-BOT_SURUM = "v4.1"
+BOT_SURUM = "v4.2"
 
 
 if __name__ == "__main__":
