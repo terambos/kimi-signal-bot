@@ -64,9 +64,16 @@ def send_signal_mail(sig: dict, news_ctx: list) -> None:
     if not MAIL_ON_STRONG:
         return
     
-    # BASLIK DEGISTI: Basina [KIMI] eklendi
-    subject = "[KIMI] SINYAL %s %s | Skor %d | Giris %s" % (
-        sig["direction"], sig["symbol"], sig["score"], sig["price"])
+    # YUKSEK / ORTA GUVEN ETIKETI
+    if sig["score"] >= 75:
+        guven = "YUKSEK GUVEN"
+        renk = "#00FF00" # Yesil
+    else:
+        guven = "ORTA GUVEN"
+        renk = "#FFA500" # Turuncu
+
+    subject = "[KIMI] [%s] SINYAL %s %s | Skor %d | Giris %s" % (
+        guven, sig["direction"], sig["symbol"], sig["score"], sig["price"])
 
     news_html = ""
     if news_ctx:
@@ -84,7 +91,7 @@ def send_signal_mail(sig: dict, news_ctx: list) -> None:
 
     html = """
     <html><body style="font-family:Arial;background:#111;color:#eee;padding:16px">
-    <h2 style="color:#f7931a">%s %s &nbsp;|&nbsp; Guven: %d/100</h2>
+    <h2 style="color:#f7931a">%s %s &nbsp;|&nbsp; <span style="color:%s">%s (%d/100)</span></h2>
     <table border="1" cellpadding="8" style="border-collapse:collapse;background:#1c1c1c">
       <tr><td>Guncel fiyat</td><td><b>%s</b></td></tr>
       %s
@@ -104,7 +111,7 @@ def send_signal_mail(sig: dict, news_ctx: list) -> None:
       Kaldirac/pozisyon buyuklugunu kendin belirle. Bu bir karar destek aracidir, yatirim tavsiyesi degildir.
     </p>
     </body></html>
-    """ % (sig["direction"], sig["symbol"], sig["score"], sig["price"],
+    """ % (sig["direction"], sig["symbol"], renk, guven, sig["score"], sig["price"],
            sr_row,
            sig["tp1"], tp1_text,
            sig["tp2"], tp2_text,
