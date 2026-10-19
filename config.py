@@ -4,14 +4,11 @@ KONFIGURASYON
 """
 import os
 
-# 40 POPULER BYBIT FUTURES COINI
+# 40 POPULER BYBIT FUTURES COINI (AI ve Hareketli Coinler Eklendi)
 COINS = [
-    # Mevcut çekirdek liste
     "ETH", "SOL", "XRP", "SUI", "HYPE", "AVAX", "ARB", "APT", "TIA", "DOGE",
     "1000PEPE", "WIF", "SEI", "INJ", "NEAR", "BNB", "LINK", "OP", "TAO", "ONDO",
     "ADA", "LTC", "TRX", "ENA", "WLD", "AAVE", "UNI",
-    
-    # Yeni eklenen hareketli ve AI coinler (Toplam 40'a tamamlandı)
     "PENDLE", "JUP", "STRK", "MANTA", "AEVO", "BLUR", "ARKM", "CFX",
     "RENDER", "FET", "GRT", "AGIX", "AKT"
 ]
@@ -24,11 +21,10 @@ TIMEFRAME_HTF   = "240"
 SCORE_STRONG = 55
 SCORE_WATCH  = 45
 
-# Dogrudan Bybit API (Yerelde ve VPS'te calisirken proxy gerekmez)
 BYBIT_BASE = "https://api.bybit.com"
 
 SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT   = 587
+SMTP_PORT   = 587  # 465 yerine 587 yapildi (Sunucu engellerini asmak icin)
 MAIL_FROM   = os.environ.get("MAIL_FROM", "")
 MAIL_TO     = os.environ.get("MAIL_TO", "")
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
@@ -58,9 +54,9 @@ FUNDING_BLOCK = 0.00075
 QQE_FRESH_BARS = 6
 ADX_MIN = 20
 
-SCAN_INTERVAL_MIN = 15  # 15 dakikada bir tarar
-REQUEST_SLEEP = 0.2     # İstekler arası bekleme (Bybit'in kızmaması için)
-MAX_WORKERS = 10        # Aynı anda 10 istek (40 coin için güvenli sınır)
+SCAN_INTERVAL_MIN = 15
+REQUEST_SLEEP = 0.2
+MAX_WORKERS = 5
 
 LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 SIGNAL_LOG = os.path.join(LOG_DIR, "sinyal_log.csv")
