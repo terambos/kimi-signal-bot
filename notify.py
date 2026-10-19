@@ -23,7 +23,10 @@ def _smtp_send(subject: str, html: str) -> bool:
         msg["Subject"] = Header(subject, "utf-8")
         msg["From"] = MAIL_FROM
         msg["To"] = MAIL_TO
-        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=20) as s:
+        
+        # PORT 587 ICIN SMTP VE STARTTLS KULLANIMI
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=20) as s:
+            s.starttls()
             s.login(MAIL_FROM, GMAIL_APP_PASSWORD)
             s.sendmail(MAIL_FROM, [MAIL_TO], msg.as_string())
         return True
@@ -64,13 +67,12 @@ def send_signal_mail(sig: dict, news_ctx: list) -> None:
     if not MAIL_ON_STRONG:
         return
     
-    # YUKSEK / ORTA GUVEN ETIKETI
     if sig["score"] >= 75:
         guven = "YUKSEK GUVEN"
-        renk = "#00FF00" # Yesil
+        renk = "#00FF00"
     else:
         guven = "ORTA GUVEN"
-        renk = "#FFA500" # Turuncu
+        renk = "#FFA500"
 
     subject = "[KIMI] [%s] SINYAL %s %s | Skor %d | Giris %s" % (
         guven, sig["direction"], sig["symbol"], sig["score"], sig["price"])
