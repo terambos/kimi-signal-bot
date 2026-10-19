@@ -28,7 +28,7 @@ SCORE_WATCH  = 45
 BYBIT_BASE = "https://api.bybit.com"
 
 SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT   = 465
+SMTP_PORT   = 587
 MAIL_FROM   = os.environ.get("MAIL_FROM", "")
 MAIL_TO     = os.environ.get("MAIL_TO", "")
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
