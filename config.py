@@ -6,12 +6,14 @@ import os
 
 # 40 POPULER BYBIT FUTURES COINI
 COINS = [
-    # Mevcut 30'lik listen
+    # Mevcut çekirdek liste
     "ETH", "SOL", "XRP", "SUI", "HYPE", "AVAX", "ARB", "APT", "TIA", "DOGE",
     "1000PEPE", "WIF", "SEI", "INJ", "NEAR", "BNB", "LINK", "OP", "TAO", "ONDO",
-    "ADA", "LTC", "TRX", "ENA", "WLD", "AAVE", "UNI", "XLM", "BCH", "ZEC",
-    # Yeni eklenen 10 hareketli coin
-    "PENDLE", "JUP", "STRK", "MANTA", "AEVO", "ALT", "BLUR", "EDU", "ARKM", "CFX"
+    "ADA", "LTC", "TRX", "ENA", "WLD", "AAVE", "UNI",
+    
+    # Yeni eklenen hareketli ve AI coinler (Toplam 40'a tamamlandı)
+    "PENDLE", "JUP", "STRK", "MANTA", "AEVO", "BLUR", "ARKM", "CFX",
+    "RENDER", "FET", "GRT", "AGIX", "AKT"
 ]
 SYMBOLS = [c + "USDT" for c in COINS]
 
