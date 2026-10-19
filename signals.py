@@ -1,13 +1,6 @@
 # -*- coding: utf-8 -*-
-"""
-Sinyal motoru v4.1:
-- ZORUNLU: 4s trend + QQE momentum + ADX >= 20
-- PUAN VEREN: 1s slope, DI, S/R, hacim, BTC, OI, funding, 15dk ivme
-- DINAMIK TP: LONG -> en yakin direnc, SHORT -> en yakin destek
-"""
 import numpy as np
 import pandas as pd
-
 import indicators as ind
 from config import (TP1_MIN_PCT, TP2_MIN_PCT, ATR_TP1_MULT, ATR_TP2_MULT,
                     ANOMALY_LOOKBACK, ANOMALY_ATR_MULT, FUNDING_BLOCK,
@@ -16,10 +9,8 @@ from config import (TP1_MIN_PCT, TP2_MIN_PCT, ATR_TP1_MULT, ATR_TP2_MULT,
                     ADX_MIN, MIN_TP_DISTANCE_PCT,
                     TP1_FALLBACK_PCT, TP2_FALLBACK_PCT)
 
-
 def _pct(a, b):
     return (a - b) / b if b else 0.0
-
 
 def sig_passes(sig: dict) -> bool:
     if not sig:
@@ -29,7 +20,6 @@ def sig_passes(sig: dict) -> bool:
     if coin in LARGE_CAPS:
         esik += LARGE_CAP_SCORE_BONUS
     return sig["score"] >= esik
-
 
 def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
     df15 = data.get("df_15")
@@ -91,8 +81,7 @@ def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
     oi_chg = 0.0
     oi_df = data.get("oi_df")
     if oi_df is not None and len(oi_df) >= 5:
-        oi_chg = _pct(float(oi_df["openInterest"].iloc[-1]),
-                      float(oi_df["openInterest"].iloc[-5]))
+        oi_chg = _pct(float(oi_df["openInterest"].iloc[-1]), float(oi_df["openInterest"].iloc[-5]))
 
     # S/R
     sr = ind.strong_sr(df15)
@@ -139,6 +128,14 @@ def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
         score += 20
         reasons.append("QQE 15dk taze momentum donusu")
 
+        # ZORUNLU 4 (YENI): BTC KORELASYONU
+        if btc_bull is not None and data["symbol"] != "BTCUSDT":
+            if direction == "LONG" and not btc_bull:
+                return None # BTC asagiyken LONG alma
+            if direction == "SHORT" and btc_bull:
+                return None # BTC yukariyken SHORT alma
+            reasons.append("BTC trendi yonle uyumlu")
+
         # PUAN: 1s slope
         if direction == "LONG" and k60_slope_pct > 0:
             score += 10; reasons.append("1s egim +%.3f" % k60_slope_pct)
@@ -162,11 +159,6 @@ def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
             score += 5; reasons.append("+DI baskin")
         elif direction == "SHORT" and di_bear:
             score += 5; reasons.append("-DI baskin")
-
-        # PUAN: BTC korelasyon
-        if btc_bull is not None and data["symbol"] != "BTCUSDT":
-            if (direction == "LONG" and btc_bull) or (direction == "SHORT" and not btc_bull):
-                score += 10; reasons.append("BTC trendi yonle uyumlu")
 
         # PUAN: Hacim
         if spike:
@@ -200,44 +192,36 @@ def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
         entry = float(last)
         stop_dist = STOP_PCT * entry
 
-        # ===== DINAMIK TP =====
         if direction == "LONG":
             stop = entry - stop_dist
-            # En yakin direnc TP1, bir sonraki direnc TP2 olabilir
             if nearest_res and nearest_res > entry:
                 tp_dist_res = (nearest_res - entry) / entry
                 if tp_dist_res >= MIN_TP_DISTANCE_PCT:
-                    tp1 = nearest_res * 0.998  # direncten hemen once
-                    tp2 = nearest_res * 1.02   # direnc kirilirsa
-                    reasons.append("TP1 = yakin direnc (%.8g), uzaklik +%.2f%%" % (nearest_res, tp_dist_res * 100))
+                    tp1 = nearest_res * 0.998
+                    tp2 = nearest_res * 1.02
+                    reasons.append("TP1 = yakin direnc (%.8g)" % nearest_res)
                 else:
                     tp1 = entry * (1 + TP1_FALLBACK_PCT)
                     tp2 = entry * (1 + TP2_FALLBACK_PCT)
-                    reasons.append("Not: direnc cok yakin, fallback TP kullanildi")
             else:
                 tp1 = entry * (1 + TP1_FALLBACK_PCT)
                 tp2 = entry * (1 + TP2_FALLBACK_PCT)
-
-            # Minimum garantile
             tp1 = max(tp1, entry * (1 + TP1_MIN_PCT))
             tp2 = max(tp2, entry * (1 + TP2_MIN_PCT))
-
-        else:  # SHORT
+        else:
             stop = entry + stop_dist
             if nearest_sup and nearest_sup < entry:
                 tp_dist_sup = (entry - nearest_sup) / entry
                 if tp_dist_sup >= MIN_TP_DISTANCE_PCT:
                     tp1 = nearest_sup * 1.002
                     tp2 = nearest_sup * 0.98
-                    reasons.append("TP1 = yakin destek (%.8g), uzaklik -%.2f%%" % (nearest_sup, tp_dist_sup * 100))
+                    reasons.append("TP1 = yakin destek (%.8g)" % nearest_sup)
                 else:
                     tp1 = entry * (1 - TP1_FALLBACK_PCT)
                     tp2 = entry * (1 - TP2_FALLBACK_PCT)
-                    reasons.append("Not: destek cok yakin, fallback TP kullanildi")
             else:
                 tp1 = entry * (1 - TP1_FALLBACK_PCT)
                 tp2 = entry * (1 - TP2_FALLBACK_PCT)
-
             tp1 = min(tp1, entry * (1 - TP1_MIN_PCT))
             tp2 = min(tp2, entry * (1 - TP2_MIN_PCT))
 
@@ -262,7 +246,6 @@ def analyze_symbol(data: dict, btc_bull: bool | None = None) -> dict | None:
     if long_sig and short_sig:
         return long_sig if long_sig["score"] >= short_sig["score"] else short_sig
     return long_sig or short_sig
-
 
 def backtest_symbol(symbol: str, df15: pd.DataFrame, df60: pd.DataFrame,
                     df240: pd.DataFrame, horizon_bars: int = 288,
@@ -334,7 +317,6 @@ def backtest_symbol(symbol: str, df15: pd.DataFrame, df60: pd.DataFrame,
             "first": first_event, "pnl_pct": round(pnl_pct, 3),
         })
     return pd.DataFrame(rows)
-
 
 def diagnose(data: dict) -> dict:
     df60 = data.get("df_60"); df240 = data.get("df_240"); df15 = data.get("df_15")
